@@ -1,11 +1,9 @@
-using AmneziaGeo.Server.Awg.Config;
-
 namespace AmneziaGeo.Server.Routing.Outbound;
 
 /// <summary>
 /// One way out of the host, as the panel holds it.
 /// </summary>
-public sealed record OutboundConfig
+public abstract record OutboundConfig
 {
     /// <summary>
     /// The number the panel keeps the outbound under.
@@ -20,7 +18,17 @@ public sealed record OutboundConfig
     /// <summary>
     /// The way traffic leaves the host.
     /// </summary>
-    public string Kind { get; init; } = OutboundKind.Local;
+    public string Kind { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Whether this way out uses a separate interface and routing table.
+    /// </summary>
+    public virtual bool UsesInterface => false;
+
+    /// <summary>
+    /// Checks the settings specific to this implementation.
+    /// </summary>
+    public abstract OutboundFault? CheckSettings();
 
     /// <summary>
     /// Where the outbound stands among the others.
@@ -33,59 +41,9 @@ public sealed record OutboundConfig
     public bool IsEnabled { get; init; } = true;
 
     /// <summary>
-    /// The address of the server the tunnel goes to.
-    /// </summary>
-    public string Host { get; init; } = string.Empty;
-
-    /// <summary>
-    /// The port of the server the tunnel goes to.
-    /// </summary>
-    public int Port { get; init; }
-
-    /// <summary>
-    /// The wstunnel proxy the tunnel travels through, as a host or a wss:// address.
-    /// </summary>
-    public string Proxy { get; init; } = string.Empty;
-
-    /// <summary>
-    /// The private key of the interface, in base64.
-    /// </summary>
-    public string PrivateKey { get; init; } = string.Empty;
-
-    /// <summary>
-    /// The public key of the interface, in base64.
-    /// </summary>
-    public string PublicKey { get; init; } = string.Empty;
-
-    /// <summary>
-    /// The public key of the server, in base64.
-    /// </summary>
-    public string PeerKey { get; init; } = string.Empty;
-
-    /// <summary>
-    /// The key added on top of the handshake, in base64.
-    /// </summary>
-    public string PresharedKey { get; init; } = string.Empty;
-
-    /// <summary>
-    /// The address ranges the interface carries.
-    /// </summary>
-    public IReadOnlyList<string> Address { get; init; } = [];
-
-    /// <summary>
     /// The name servers reachable through the outbound.
     /// </summary>
     public IReadOnlyList<string> Dns { get; init; } = [];
-
-    /// <summary>
-    /// The packet size of the interface, zero when the kernel picks it.
-    /// </summary>
-    public int Mtu { get; init; }
-
-    /// <summary>
-    /// How often an empty packet holds the path to the server open, in seconds.
-    /// </summary>
-    public int Keepalive { get; init; }
 
     /// <summary>
     /// Whether the clients are kept out of the private networks behind the tunnel.
@@ -101,11 +59,6 @@ public sealed record OutboundConfig
     /// How often the probe goes out, in seconds.
     /// </summary>
     public int ProbeEvery { get; init; }
-
-    /// <summary>
-    /// The obfuscation the tunnel carries.
-    /// </summary>
-    public ObfuscationSettings Obfuscation { get; init; } = new();
 
     /// <summary>
     /// The mark that sends a packet out through this outbound.

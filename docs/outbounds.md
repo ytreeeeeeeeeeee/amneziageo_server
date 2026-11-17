@@ -13,8 +13,8 @@ puts them on the host through the `ip` and `nft` tools.
 | `GET /api/outbounds` | `state:read` |
 | `GET /api/outbounds/{id}` | `state:read` |
 | `GET /api/outbounds/draft` | `routing:write` |
-| `POST /api/outbounds/keys` | `routing:write` |
-| `POST /api/outbounds/import` | `routing:write` |
+| `POST /api/outbounds/awg/keys` | `routing:write` |
+| `POST /api/outbounds/awg/import` | `routing:write` |
 | `POST /api/outbounds` | `routing:write` |
 | `PUT /api/outbounds/{id}` | `routing:write` |
 | `POST /api/outbounds/{id}/switch` | `routing:write` |
@@ -97,7 +97,7 @@ outbound. The panel does the same under `Probe now` in the row menu.
 
 ## Reading a client configuration
 
-`POST /api/outbounds/import` takes the `.conf` an AmneziaWG server hands its clients and answers with the
+`POST /api/outbounds/awg/import` takes the `.conf` an AmneziaWG server hands its clients and answers with the
 outbound it carries: keys, address, obfuscation and endpoint. Nothing is stored: the answer is a draft the
 panel fills the form with. In the panel the same thing is the field at the bottom of the form.
 
@@ -155,6 +155,37 @@ live. With it off, a rule that sends such a range into the tunnel takes the clie
 address of the tunnel.
 
 ## Putting it on the host
+
+`OutboundConfig` is the abstract contract for identity, routing, DNS and probe settings.
+`LocalOutboundConfig` describes the way out through the host itself; `AwgOutboundConfig` derives from the same contract and adds the server, keys, interface addresses, MTU, keepalive, obfuscation and websocket proxy.
+`OutboundEntity`, `OutboundRequest`, `OutboundResponse` and `OutboundState` contain only common fields.
+Their AWG counterparts own the protocol fields, including the peer endpoint and handshake diagnostics.
+The common configuration, entity, request and response types are abstract. Local outbounds have their own
+`LocalOutboundConfig`, `LocalOutboundEntity`, `LocalOutboundRequest`, `LocalOutboundResponse` and state types.
+All outbound entities are declared in `Entities.cs`.
+
+EF uses TPT inheritance: `Outbounds` stores common settings, `LocalOutbounds` identifies local rows,
+and `AwgOutbounds` stores keys and tunnel settings. The local migration creates the matching derived rows
+for existing local outbounds without changing their identity or settings.
+The migration copies existing `wg` and `ws` rows before removing their protocol columns from `Outbounds`;
+the downgrade restores these columns and their contents.
+
+JSON requests use `kind` (`local`, `wg`, `ws`) to select the request subtype. A local request and response
+have no server, key, obfuscation or handshake fields; sending protocol fields in a local request is refused.
+AWG and WS retain these fields in their own response subtype. Lists can contain all subtypes; key visibility
+still follows the caller's permissions. Key generation and config import use `/api/outbounds/awg/keys` and
+`/api/outbounds/awg/import`. A draft without a requested kind now starts as `local`.
+
+Persistence and response factories are registered alongside the implementations. The shared store,
+rules, firewall, resolver and probes use the common contracts and the `UsesInterface` capability.
+
+`OutboundHost` selects an `IOutboundDriver` by kind. `AwgOutboundDriver` prepares, restores and removes
+the interfaces and routes of both `wg` and `ws` outbounds and reads their handshakes and counters;
+`LocalOutboundDriver` uses the main routing table without creating an interface. The host keeps policy
+rules, the refusal rule and the firewall shared, and combines each driver's state with the verdict from
+`ProbeLive`. `ProbeRunner` and `IProbeLink` probe every kind under its outbound mark independently of the
+driver. Drivers are registered in `OutboundServices`; adding a kind also requires its settings to be
+accepted by outbound validation and represented in the API and panel.
 
 Adding, changing, turning on and off, and removing an outbound each put it on the host straight away.
 Renaming an outbound writes the new name into the rules and the balancers that name it and into the settings of

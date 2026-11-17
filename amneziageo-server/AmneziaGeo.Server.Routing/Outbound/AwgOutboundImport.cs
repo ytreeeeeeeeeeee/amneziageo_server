@@ -5,16 +5,16 @@ using AmneziaGeo.Server.Core.Crypto;
 namespace AmneziaGeo.Server.Routing.Outbound;
 
 /// <summary>
-/// The outbound a client configuration was read into, and why it was refused.
+/// The AmneziaWG outbound a client configuration was read into, and why it was refused.
 /// </summary>
 /// <param name="Outbound">The outbound the text carried.</param>
 /// <param name="Fault">The reason the text was refused.</param>
-public sealed record OutboundImportResult(OutboundConfig? Outbound, OutboundFault? Fault);
+public sealed record OutboundImportResult(AwgOutboundConfig? Outbound, OutboundFault? Fault);
 
 /// <summary>
 /// Reads the client configuration of an AmneziaWG server into an outbound.
 /// </summary>
-public static class OutboundImport
+public static class AwgOutboundImport
 {
     private static readonly char[] Breaks = [',', ' ', '\t'];
 
@@ -31,7 +31,6 @@ public static class OutboundImport
         var settings = Sections(text);
         var self = settings.Interface;
         var peer = settings.Peer;
-
         if (!Curve25519.IsKey(Value(self, "PrivateKey")))
         {
             return Refuse("bad-import", "the configuration carries no private key");
@@ -50,7 +49,7 @@ public static class OutboundImport
         var key = Value(self, "PrivateKey");
 
         return new OutboundImportResult(
-            new OutboundConfig
+            new AwgOutboundConfig
             {
                 Name = name,
                 Kind = OutboundKind.Wg,
@@ -62,8 +61,8 @@ public static class OutboundImport
                 PresharedKey = Value(peer, "PresharedKey"),
                 Address = Parts(Value(self, "Address")),
                 Dns = [.. Parts(Value(self, "DNS")).Where(one => IPAddress.TryParse(one, out _))],
-                Mtu = Number(self, "MTU", OutboundDefaults.Mtu),
-                Keepalive = Number(peer, "PersistentKeepalive", OutboundDefaults.Keepalive),
+                Mtu = Number(self, "MTU", AwgOutboundDefaults.Mtu),
+                Keepalive = Number(peer, "PersistentKeepalive", AwgOutboundDefaults.Keepalive),
                 Obfuscation = Obfuscation(self),
             },
             null);
@@ -103,7 +102,6 @@ public static class OutboundImport
         var self = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var peer = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var current = self;
-
         foreach (var raw in text.Split('\n'))
         {
             var line = Trim(raw);
@@ -115,7 +113,6 @@ public static class OutboundImport
             if (line.StartsWith('['))
             {
                 current = line.StartsWith("[Peer", StringComparison.OrdinalIgnoreCase) ? peer : self;
-
                 continue;
             }
 

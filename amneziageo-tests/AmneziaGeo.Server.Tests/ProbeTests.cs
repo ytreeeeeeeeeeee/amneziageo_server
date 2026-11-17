@@ -105,7 +105,7 @@ public class ProbeTests
     [Fact]
     public void AnOutboundTheProbeDoesNotReachCarriesNothing()
     {
-        var state = new OutboundState("awgbor", true, "", Noon, 0, 0, true, "", new ProbeReading(false, 2, Noon));
+        var state = new OutboundState("awgbor", true, 0, 0, true, "", new ProbeReading(false, 2, Noon));
 
         Assert.True(state.IsAlive);
         Assert.False(state.Carries);
@@ -114,7 +114,7 @@ public class ProbeTests
     [Fact]
     public void AnOutboundThatWasNeverProbedCarriesWhatTheHandshakeSays()
     {
-        var state = new OutboundState("awgbor", true, "", Noon, 0, 0, true, "");
+        var state = new OutboundState("awgbor", true, 0, 0, true, "");
 
         Assert.True(state.Carries);
     }
@@ -183,7 +183,7 @@ public class ProbeTests
     private static ProbeRunner Runner(IProbeLink link, ProbeLive live, TimeProvider time) =>
         new(link, live, time, NullLogger<ProbeRunner>.Instance);
 
-    private static OutboundConfig Tunnel() => new()
+    private static OutboundConfig Tunnel() => new AwgOutboundConfig()
     {
         Name = "awgbor",
         Kind = OutboundKind.Wg,

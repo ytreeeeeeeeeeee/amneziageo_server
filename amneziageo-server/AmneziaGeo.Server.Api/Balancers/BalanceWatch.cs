@@ -1,5 +1,4 @@
 using AmneziaGeo.Server.Api.Rules;
-using AmneziaGeo.Server.Awg.Netlink;
 using AmneziaGeo.Server.Dal;
 using AmneziaGeo.Server.Routing.Balance;
 using AmneziaGeo.Server.Routing.Host;
@@ -64,7 +63,7 @@ public sealed class BalanceWatch : BackgroundService
                 "the rules went on the host again: the balancers now pick from {Alive}",
                 string.Join(", ", _live.Alive ?? new HashSet<string>()));
         }
-        catch (Exception ex) when (ex is HostNetworkException or NetlinkException or InvalidOperationException)
+        catch (Exception ex) when (ex is HostNetworkException or InvalidOperationException)
         {
             _logger.LogWarning(ex, "what the balancers pick from was not read back from the host");
         }

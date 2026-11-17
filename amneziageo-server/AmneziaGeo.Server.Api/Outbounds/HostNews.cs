@@ -10,15 +10,10 @@ namespace AmneziaGeo.Server.Api.Outbounds;
 public sealed class HostNews : IHostedService, IDisposable
 {
     private static readonly TimeSpan JoinFor = TimeSpan.FromSeconds(2);
-
     private readonly HostChanges _changes;
-
     private readonly ILogger<HostNews> _logger;
-
     private RouteEvents? _socket;
-
     private Thread? _reader;
-
     private volatile bool _stopping;
 
     /// <summary>
@@ -41,7 +36,8 @@ public sealed class HostNews : IHostedService, IDisposable
         }
         catch (Exception ex) when (ex is NetlinkException or DllNotFoundException)
         {
-            _logger.LogWarning(ex, "the panel does not hear the kernel about the interfaces and the rules and looks at them every round");
+            _logger.LogWarning(ex,
+                "the panel does not hear the kernel about the interfaces and the rules and looks at them every round");
 
             return Task.CompletedTask;
         }

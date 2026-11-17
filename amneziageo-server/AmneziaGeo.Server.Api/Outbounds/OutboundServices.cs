@@ -4,6 +4,7 @@ using AmneziaGeo.Server.Api.Rules;
 using AmneziaGeo.Server.Routing.Balance;
 using AmneziaGeo.Server.Routing.Carrier;
 using AmneziaGeo.Server.Routing.Host;
+using AmneziaGeo.Server.Routing.Outbound;
 using AmneziaGeo.Server.Routing.Probe;
 
 namespace AmneziaGeo.Server.Api.Outbounds;
@@ -35,11 +36,11 @@ public static class OutboundServices
     public static IServiceCollection AddOutbounds(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);
+
         ArgumentNullException.ThrowIfNull(configuration);
 
         var options = new RoutingOptions();
         configuration.GetSection(RoutingOptions.Section).Bind(options);
-
         services.AddSingleton(options);
         services.AddSingleton<IHostCommands>(new HostCommands(options.Sudo));
         services.AddSingleton<IHostNetwork, IpHostNetwork>();
@@ -48,6 +49,12 @@ public static class OutboundServices
         services.AddSingleton<ProbeLive>();
         services.AddSingleton<IProbeLink, ProbeLink>();
         services.AddSingleton<ProbeRunner>();
+        services.AddSingleton<IOutboundDriver, LocalOutboundDriver>();
+        services.AddSingleton<IOutboundDriver, AwgOutboundDriver>();
+        services.AddSingleton<IOutboundResponseFactory, LocalOutboundResponses>();
+        services.AddSingleton<IOutboundResponseFactory, AwgOutboundResponses>();
+        services.AddSingleton<OutboundAnswers>();
+        services.ConfigureHttpJsonOptions(options => OutboundJson.Configure(options.SerializerOptions));
         services.AddSingleton<OutboundHost>();
         services.AddSingleton<RoutePlans>();
         services.AddSingleton<BalanceLive>();
@@ -74,7 +81,6 @@ public static class OutboundServices
         if (error is null)
         {
             logger.LogInformation("{Message}", message);
-
             return;
         }
 

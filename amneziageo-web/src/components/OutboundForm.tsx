@@ -1,19 +1,26 @@
 import { useState } from "react"
 import { complaint } from "@/api/auth"
-import type { Obfuscation } from "@/api/configs"
-import { useImportOutbound, useOutboundKeys } from "@/api/outbounds"
+import { draftOf, reuseDraft } from "@/api/outbounds"
+import { client } from "@/api/client"
+import type { Outbound } from "@/api/outbounds"
+import type { OutboundDraftBase } from "@/api/outboundContracts"
 import type { OutboundDraft, OutboundKind } from "@/api/outbounds"
 import { WayUse } from "@/components/Holders"
-import { ObfuscationFields } from "@/components/Obfuscation"
-import { Count, Flag, Line, ListLine, Part, Switch } from "@/components/fields"
+import { AwgOutboundFields } from "@/components/AwgOutboundFields"
+import { Count, Line, Part, Switch } from "@/components/fields"
 import { danger, field, footer, label, primary, secondary } from "@/components/styles"
 import { useText } from "@/i18n"
 import type { TextKey } from "@/i18n"
 import { same } from "@/store/draftSlice"
 
+type HeldDraft = {
+  draft: OutboundDraft
+  publicKey: string
+}
+
 export function OutboundForm({
   start,
-  publicKey,
+  source,
   self,
   pending,
   error,
@@ -22,7 +29,7 @@ export function OutboundForm({
   onRemove,
 }: {
   start: OutboundDraft
-  publicKey: string
+  source?: Outbound
   self?: string
   pending: boolean
   error: unknown
@@ -31,48 +38,75 @@ export function OutboundForm({
   onRemove?: () => void
 }) {
   const t = useText()
-  const keys = useOutboundKeys()
-  const read = useImportOutbound()
-  const [draft, setDraft] = useState(start)
-  const [shown, setShown] = useState(publicKey)
-  const [text, setText] = useState("")
+  const [form, setForm] = useState<HeldDraft & {
+    drafts: Partial<Record<OutboundKind, HeldDraft>>
+  }>(() => ({
+    draft: start,
+    publicKey: source !== undefined && source.kind !== "local" ? source.publicKey : "",
+    drafts: {},
+  }))
+  const { draft, publicKey } = form
+  const [kindPending, setKindPending] = useState(false)
+  const [kindError, setKindError] = useState<unknown>(null)
   const edited = !same(draft, start)
 
-  function put(change: Partial<OutboundDraft>) {
-    setDraft({ ...draft, ...change })
+  function setDraft(next: OutboundDraft) {
+    setForm((current) => ({ ...current, draft: next }))
   }
 
-  function twist(change: Partial<Obfuscation>) {
-    setDraft({ ...draft, obfuscation: { ...draft.obfuscation, ...change } })
+  function setPublicKey(next: string) {
+    setForm((current) => ({ ...current, publicKey: next }))
   }
 
-  async function pair() {
-    const made = await keys.mutateAsync()
-    setDraft({ ...draft, privateKey: made.privateKey })
-    setShown(made.publicKey)
+  function put(change: Partial<Omit<OutboundDraftBase, "kind">>) {
+    setForm((current) => ({ ...current, draft: { ...current.draft, ...change } }))
   }
 
-  async function take() {
-    const found = await read.mutateAsync({ name: draft.name, config: text })
-    setDraft({
-      ...draft,
-      kind: found.kind,
-      host: found.host,
-      port: found.port,
-      privateKey: found.privateKey ?? "",
-      peerKey: found.peerKey,
-      presharedKey: found.presharedKey ?? "",
-      address: found.address,
-      dns: found.dns,
-      mtu: found.mtu,
-      keepalive: found.keepalive,
-      obfuscation: found.obfuscation,
-    })
-    setShown(found.publicKey)
-    setText("")
+  function switchDraft(next: OutboundDraft, nextPublicKey: string) {
+    setForm((current) => ({
+      draft: {
+        ...next,
+        name: current.draft.name,
+        isEnabled: current.draft.isEnabled,
+        dns: current.draft.dns,
+        probe: current.draft.probe,
+        probeEvery: current.draft.probeEvery,
+        closePrivate: current.draft.closePrivate,
+        rules: current.draft.rules,
+        balancers: current.draft.balancers,
+      },
+      publicKey: nextPublicKey,
+      drafts: {
+        ...current.drafts,
+        [current.draft.kind]: { draft: current.draft, publicKey: current.publicKey },
+      },
+    }))
   }
 
-  const tunnel = draft.kind === "wg" || draft.kind === "ws"
+  async function changeKind(kind: OutboundKind) {
+    const held = form.drafts[kind]
+    const carried = held?.draft ?? reuseDraft(draft, kind)
+
+    if (carried !== null) {
+      switchDraft(carried, held?.publicKey ?? publicKey)
+      setKindError(null)
+      return
+    }
+    setKindPending(true)
+    try {
+      const response = await client.get<Outbound>(
+        `/outbounds/draft?name=${encodeURIComponent(draft.name)}&kind=${kind}`,
+      )
+      const fresh = draftOf(response.data)
+
+      switchDraft(fresh, response.data.kind !== "local" ? response.data.publicKey : "")
+      setKindError(null)
+    } catch (failure) {
+      setKindError(failure)
+    } finally {
+      setKindPending(false)
+    }
+  }
 
   return (
     <div className="mt-4 flex flex-col gap-4">
@@ -97,8 +131,9 @@ export function OutboundForm({
           </label>
           <select
             id="outbound-kind"
+            disabled={pending || kindPending}
             value={draft.kind}
-            onChange={(e) => put({ kind: e.target.value as OutboundKind })}
+            onChange={(e) => void changeKind(e.target.value as OutboundKind)}
             className={`mt-1 ${field}`}
           >
             <option value="local">{t("outbounds.kindLocal")}</option>
@@ -133,134 +168,12 @@ export function OutboundForm({
         />
       </Part>
 
-      {tunnel && (
-        <Part title={t("outbounds.server")}>
-          <Line
-            id="outbound-host"
-            caption={t("outbounds.host")}
-            value={draft.host}
-            onChange={(value) => put({ host: value })}
-          />
-          <Count
-            id="outbound-port"
-            caption={t("outbounds.port")}
-            value={draft.port}
-            onChange={(value) => put({ port: value })}
-          />
-          {draft.kind === "ws" && (
-            <Line
-              id="outbound-proxy"
-              caption={t("outbounds.proxy")}
-              value={draft.proxy}
-              onChange={(value) => put({ proxy: value })}
-              wide
-            />
-          )}
-          <ListLine
-            id="outbound-address"
-            caption={t("outbounds.address")}
-            value={draft.address}
-            onChange={(address) => put({ address })}
-            wide
-          />
-          <ListLine
-            id="outbound-dns"
-            caption={t("outbounds.dns")}
-            value={draft.dns}
-            onChange={(dns) => put({ dns })}
-          />
-          <Count
-            id="outbound-mtu"
-            caption={t("outbounds.mtu")}
-            value={draft.mtu}
-            onChange={(value) => put({ mtu: value })}
-          />
-          <Count
-            id="outbound-keepalive"
-            caption={t("outbounds.keepalive")}
-            value={draft.keepalive}
-            onChange={(value) => put({ keepalive: value })}
-          />
-          <Flag
-            id="outbound-close-private"
-            caption={t("outbounds.closePrivate")}
-            value={draft.closePrivate}
-            onChange={(value) => put({ closePrivate: value })}
-          />
-        </Part>
-      )}
+      {draft.kind !== "local" && <AwgOutboundFields
+        draft={draft} setDraft={setDraft}
+        publicKey={publicKey} setPublicKey={setPublicKey}
+      />}
 
-      {tunnel && (
-        <Part title={t("outbounds.keys")}>
-          <Line
-            id="outbound-private"
-            caption={t("outbounds.private")}
-            value={draft.privateKey}
-            onChange={(value) => put({ privateKey: value.trim() })}
-            wide
-          />
-          <div className="sm:col-span-2 flex items-end gap-3">
-            <div className="min-w-0 flex-1">
-              <span className={label}>{t("outbounds.public")}</span>
-              <div className={`mt-1 truncate ${field}`}>{shown}</div>
-            </div>
-            <button type="button" onClick={() => void pair()} disabled={keys.isPending} className={secondary}>
-              {t("outbounds.newKeys")}
-            </button>
-          </div>
-          <Line
-            id="outbound-peer"
-            caption={t("outbounds.peerKey")}
-            value={draft.peerKey}
-            onChange={(value) => put({ peerKey: value.trim() })}
-            wide
-          />
-          <Line
-            id="outbound-preshared"
-            caption={t("outbounds.preshared")}
-            value={draft.presharedKey}
-            onChange={(value) => put({ presharedKey: value.trim() })}
-            wide
-          />
-        </Part>
-      )}
-
-      {tunnel && (
-        <Part title={t("outbounds.obfuscation")}>
-          <ObfuscationFields id="outbound" cover={draft.obfuscation} onChange={twist} />
-        </Part>
-      )}
-
-      {tunnel && (
-        <Part title={t("outbounds.import")}>
-          <div className="sm:col-span-2">
-            <label className={label} htmlFor="outbound-config">
-              {t("outbounds.paste")}
-            </label>
-            <textarea
-              id="outbound-config"
-              value={text}
-              rows={5}
-              onChange={(e) => setText(e.target.value)}
-              className={`mt-1 font-mono text-xs ${field}`}
-            />
-          </div>
-          <div className="sm:col-span-2 flex justify-end">
-            <button
-              type="button"
-              onClick={() => void take()}
-              disabled={read.isPending || text.trim().length === 0}
-              className={secondary}
-            >
-              {t("outbounds.read")}
-            </button>
-          </div>
-          {read.error !== null && read.error !== undefined && (
-            <div className="text-sm text-alarm sm:col-span-2">{t(complaint(read.error) as TextKey)}</div>
-          )}
-        </Part>
-      )}
-
+      {kindError !== null && <div className="text-sm text-alarm">{t(complaint(kindError) as TextKey)}</div>}
       {error !== null && error !== undefined && (
         <div className="text-sm text-alarm">{t(complaint(error) as TextKey)}</div>
       )}
@@ -277,7 +190,7 @@ export function OutboundForm({
         <button
           type="button"
           onClick={() => onSave(draft)}
-          disabled={!edited || pending || draft.name.length === 0}
+          disabled={!edited || pending || kindPending || draft.name.length === 0}
           className={primary}
         >
           {pending ? t("outbounds.busy") : t("outbounds.save")}

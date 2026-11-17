@@ -1,9 +1,7 @@
 using AmneziaGeo.Server.Api.Auth;
-using AmneziaGeo.Server.Api.Configs;
 using AmneziaGeo.Server.Api.Dns;
 using AmneziaGeo.Server.Api.Rules;
 using AmneziaGeo.Server.Auth;
-using AmneziaGeo.Server.Core.Crypto;
 using AmneziaGeo.Server.Dal;
 using AmneziaGeo.Server.Routing.Host;
 using AmneziaGeo.Server.Routing.Outbound;
@@ -25,11 +23,9 @@ public static class OutboundEndpoints
         var reading = routes.MapGroup("/api/outbounds").RequireScope(Scopes.ReadState);
         reading.MapGet("/", ListAsync);
         reading.MapGet("/{id:long}", FindAsync);
-
         var writing = routes.MapGroup("/api/outbounds").RequireScope(Scopes.ManageRouting);
         writing.MapGet("/draft", Draft);
-        writing.MapPost("/keys", Keys);
-        writing.MapPost("/import", Import);
+        writing.MapAwgOutbounds();
         writing.MapPost("/", AddAsync);
         writing.MapPut("/{id:long}", ChangeAsync);
         writing.MapPost("/{id:long}/switch", SwitchAsync);
@@ -46,6 +42,7 @@ public static class OutboundEndpoints
         HttpContext context,
         OutboundStore store,
         OutboundHost host,
+        OutboundAnswers answers,
         CancellationToken ct)
     {
         var found = await store.ListAsync(ct).ConfigureAwait(false);
@@ -53,7 +50,7 @@ public static class OutboundEndpoints
         var secrets = Secrets(context);
 
         return Results.Ok(found
-            .Select((outbound, at) => OutboundAnswers.Outbound(outbound, states[at], secrets))
+            .Select((outbound, at) => answers.Outbound(outbound, states[at], secrets))
             .ToArray());
     }
 
@@ -62,38 +59,26 @@ public static class OutboundEndpoints
         HttpContext context,
         OutboundStore store,
         OutboundHost host,
+        OutboundAnswers answers,
         CancellationToken ct)
     {
         var found = await store.FindAsync(id, ct).ConfigureAwait(false);
 
         return found is null
             ? Refuse(StatusCodes.Status404NotFound, "unknown-outbound", $"there is no outbound under the number {id}")
-            : Results.Ok(OutboundAnswers.Outbound(found, host.State(found), Secrets(context)));
+            : Results.Ok(answers.Outbound(found, host.State(found), Secrets(context)));
     }
 
-    private static IResult Draft(string? name, string? kind) =>
-        Results.Ok(OutboundAnswers.Outbound(
-            OutboundDefaults.Fresh(
-                string.IsNullOrWhiteSpace(name) ? "out0" : name.Trim(),
-                string.IsNullOrWhiteSpace(kind) ? OutboundKind.Wg : kind.Trim()),
-            null,
-            true));
-
-    private static IResult Keys()
+    private static IResult Draft(string? name, string? kind, IEnumerable<IOutboundDriver> drivers,
+        OutboundAnswers answers)
     {
-        var pair = Curve25519.Create();
+        var requested = string.IsNullOrWhiteSpace(kind) ? OutboundKind.Local : kind.Trim();
+        var driver = drivers.FirstOrDefault(one => one.Supports(requested));
 
-        return Results.Ok(new KeyPairResponse(pair.PrivateKey, pair.PublicKey));
-    }
-
-    private static IResult Import(OutboundImportRequest request)
-    {
-        var name = (request.Name ?? string.Empty).Trim();
-        var result = OutboundImport.Read(request.Config, name.Length > 0 ? name : "out0");
-
-        return result.Outbound is null
-            ? Refuse(StatusCodes.Status400BadRequest, result.Fault!.Code, result.Fault.Message)
-            : Results.Ok(OutboundAnswers.Outbound(result.Outbound, null, true));
+        return driver is null
+            ? Refuse(StatusCodes.Status400BadRequest, "bad-kind", $"no driver carries '{requested}'")
+            : Results.Ok(answers.Outbound(
+                driver.Draft(string.IsNullOrWhiteSpace(name) ? "out0" : name.Trim(), requested), null, true));
     }
 
     private static async Task<IResult> AddAsync(
@@ -101,6 +86,7 @@ public static class OutboundEndpoints
         OutboundStore store,
         OutboundHost host,
         RouteApplier routes,
+        OutboundAnswers answers,
         CancellationToken ct)
     {
         using var hold = await host.HoldAsync(ct).ConfigureAwait(false);
@@ -115,7 +101,7 @@ public static class OutboundEndpoints
 
         return Results.Created(
             $"/api/outbounds/{result.Record!.Id}",
-            OutboundAnswers.Outbound(result.Record, state, true));
+            answers.Outbound(result.Record, state, true));
     }
 
     private static async Task<IResult> ProbeAsync(
@@ -124,6 +110,7 @@ public static class OutboundEndpoints
         OutboundHost host,
         ProbeRunner runner,
         RouteApplier routes,
+        OutboundAnswers answers,
         CancellationToken ct)
     {
         var found = await store.FindAsync(id, ct).ConfigureAwait(false);
@@ -140,7 +127,7 @@ public static class OutboundEndpoints
             await routes.SettleAsync(ct).ConfigureAwait(false);
         }
 
-        return Results.Ok(OutboundAnswers.State(host.State(found)));
+        return Results.Ok(answers.State(host.State(found)));
     }
 
     private static async Task<IResult> ChangeAsync(
@@ -152,6 +139,7 @@ public static class OutboundEndpoints
         OutboundHost host,
         RouteApplier routes,
         DnsHost resolver,
+        OutboundAnswers answers,
         CancellationToken ct)
     {
         using var hold = await host.HoldAsync(ct).ConfigureAwait(false);
@@ -186,7 +174,7 @@ public static class OutboundEndpoints
             await rules.LeaveThroughAsync(result.Record!.Name, request.Rules, ct).ConfigureAwait(false);
         }
 
-        if (held is not null && held.Name != result.Record!.Name)
+        if (held is not null && (held.Name != result.Record!.Name || held.Kind != result.Record.Kind))
         {
             await host.WithdrawAsync(held, ct).ConfigureAwait(false);
         }
@@ -198,7 +186,7 @@ public static class OutboundEndpoints
             await resolver.FollowAsync(held.Name, result.Record!.Name, ct).ConfigureAwait(false);
         }
 
-        return Results.Ok(OutboundAnswers.Outbound(result.Record!, state, true));
+        return Results.Ok(answers.Outbound(result.Record!, state, true));
     }
 
     private static async Task<IResult> SwitchAsync(
@@ -207,6 +195,7 @@ public static class OutboundEndpoints
         OutboundStore store,
         OutboundHost host,
         RouteApplier routes,
+        OutboundAnswers answers,
         CancellationToken ct)
     {
         if (request.On is not { } on)
@@ -224,7 +213,7 @@ public static class OutboundEndpoints
         var state = await host.ApplyAsync(result.Record!, ct).ConfigureAwait(false);
         await FirewallAsync(store, host, routes, ct).ConfigureAwait(false);
 
-        return Results.Ok(OutboundAnswers.Outbound(result.Record!, state, true));
+        return Results.Ok(answers.Outbound(result.Record!, state, true));
     }
 
     private static async Task<IResult> MoveAsync(
@@ -232,12 +221,13 @@ public static class OutboundEndpoints
         OutboundMoveRequest request,
         OutboundStore store,
         OutboundHost host,
+        OutboundAnswers answers,
         CancellationToken ct)
     {
         var result = await store.MoveAsync(id, request.Up, ct).ConfigureAwait(false);
 
         return result.IsOk
-            ? Results.Ok(OutboundAnswers.Outbound(result.Record!, host.State(result.Record!), true))
+            ? Results.Ok(answers.Outbound(result.Record!, host.State(result.Record!), true))
             : Explain(result);
     }
 
@@ -262,22 +252,25 @@ public static class OutboundEndpoints
         return Results.NoContent();
     }
 
-    private static async Task<IResult> ApplyAsync(long id, OutboundStore store, OutboundHost host, RouteApplier routes, CancellationToken ct)
+    private static async Task<IResult> ApplyAsync(long id, OutboundStore store, OutboundHost host, RouteApplier routes,
+        OutboundAnswers answers, CancellationToken ct)
     {
         using var hold = await host.HoldAsync(ct).ConfigureAwait(false);
         var found = await store.FindAsync(id, ct).ConfigureAwait(false);
         if (found is null)
         {
-            return Refuse(StatusCodes.Status404NotFound, "unknown-outbound", $"there is no outbound under the number {id}");
+            return Refuse(StatusCodes.Status404NotFound, "unknown-outbound",
+                $"there is no outbound under the number {id}");
         }
 
         var state = await host.ApplyAsync(found, ct).ConfigureAwait(false);
         await FirewallAsync(store, host, routes, ct).ConfigureAwait(false);
 
-        return Results.Ok(OutboundAnswers.Outbound(found, state, true));
+        return Results.Ok(answers.Outbound(found, state, true));
     }
 
-    private static async Task<IResult> SyncAsync(OutboundStore store, OutboundHost host, RouteApplier routes, CancellationToken ct)
+    private static async Task<IResult> SyncAsync(OutboundStore store, OutboundHost host, RouteApplier routes,
+        OutboundAnswers answers, CancellationToken ct)
     {
         using var hold = await host.HoldAsync(ct).ConfigureAwait(false);
         var found = await store.ListAsync(ct).ConfigureAwait(false);
@@ -287,7 +280,7 @@ public static class OutboundEndpoints
             await routes.SettleAsync(ct).ConfigureAwait(false);
 
             return Results.Ok(found
-                .Select((outbound, at) => OutboundAnswers.Outbound(outbound, states[at], true))
+                .Select((outbound, at) => answers.Outbound(outbound, states[at], true))
                 .ToArray());
         }
         catch (HostNetworkException ex)
@@ -296,7 +289,8 @@ public static class OutboundEndpoints
         }
     }
 
-    private static async Task FirewallAsync(OutboundStore store, OutboundHost host, RouteApplier routes, CancellationToken ct)
+    private static async Task FirewallAsync(OutboundStore store, OutboundHost host, RouteApplier routes,
+        CancellationToken ct)
     {
         try
         {
@@ -311,7 +305,8 @@ public static class OutboundEndpoints
 
     private static bool Secrets(HttpContext context) => context.Caller()?.Holds(Scopes.ManageRouting) == true;
 
-    private static IResult Explain(OutboundResult result) => Refuse(Status(result.Outcome), result.Code, result.Message);
+    private static IResult Explain(OutboundResult result) =>
+        Refuse(Status(result.Outcome), result.Code, result.Message);
 
     private static int Status(OutboundOutcome outcome) => outcome switch
     {

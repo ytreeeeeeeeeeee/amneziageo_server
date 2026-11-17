@@ -1,76 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { client } from "./client"
-import type { KeyPair, Obfuscation } from "./configs"
 
-export type OutboundKind = "local" | "wg" | "ws"
-
-export interface OutboundProbe {
-  isReached: boolean
-  falls: number
-  at: string
-}
-
-export interface OutboundState {
-  hasLink: boolean
-  endpoint: string
-  lastHandshake: string | null
-  rxBytes: number | null
-  txBytes: number | null
-  isAlive: boolean
-  fault: string
-  carries: boolean
-  probe: OutboundProbe | null
-}
-
-export interface Outbound {
-  id: number
-  name: string
-  kind: OutboundKind
-  position: number
-  isEnabled: boolean
-  host: string
-  port: number
-  proxy: string
-  publicKey: string
-  peerKey: string
-  privateKey: string | null
-  presharedKey: string | null
-  address: string[]
-  dns: string[]
-  mtu: number
-  keepalive: number
-  probe: string
-  probeEvery: number
-  closePrivate: boolean
-  mark: number
-  table: number
-  obfuscation: Obfuscation
-  state: OutboundState | null
-  createdUtc: string
-  updatedUtc: string
-}
-
-export interface OutboundDraft {
-  name: string
-  kind: OutboundKind
-  isEnabled: boolean
-  host: string
-  port: number
-  proxy: string
-  privateKey: string
-  peerKey: string
-  presharedKey: string
-  address: string[]
-  dns: string[]
-  mtu: number
-  keepalive: number
-  probe: string
-  probeEvery: number
-  closePrivate: boolean
-  obfuscation: Obfuscation
-  balancers?: number[]
-  rules?: number[]
-}
+import type { Outbound, OutboundDraft, OutboundKind } from "./outboundTypes"
+export type { Outbound, OutboundDraft, OutboundKind } from "./outboundTypes"
+export type { OutboundState } from "./outboundContracts"
 
 export function useOutbounds() {
   return useQuery({
@@ -118,40 +51,7 @@ export function useProbeOutbound() {
   return useRefreshing((id: number) => client.post(`/outbounds/${id}/probe`))
 }
 
-export function useImportOutbound() {
-  return useMutation({
-    mutationFn: async ({ name, config }: { name: string; config: string }) =>
-      (await client.post<Outbound>("/outbounds/import", { name, config })).data,
-  })
-}
-
-export function useOutboundKeys() {
-  return useMutation({
-    mutationFn: async () => (await client.post<KeyPair>("/outbounds/keys")).data,
-  })
-}
-
-export function draftOf(outbound: Outbound): OutboundDraft {
-  return {
-    name: outbound.name,
-    kind: outbound.kind,
-    isEnabled: outbound.isEnabled,
-    host: outbound.host,
-    port: outbound.port,
-    proxy: outbound.proxy,
-    privateKey: outbound.privateKey ?? "",
-    peerKey: outbound.peerKey,
-    presharedKey: outbound.presharedKey ?? "",
-    address: outbound.address,
-    dns: outbound.dns,
-    mtu: outbound.mtu,
-    keepalive: outbound.keepalive,
-    probe: outbound.probe,
-    probeEvery: outbound.probeEvery,
-    closePrivate: outbound.closePrivate,
-    obfuscation: outbound.obfuscation,
-  }
-}
+export { draftOf, reuseDraft } from "./outboundTypes"
 
 function useRefreshing<TArgs>(call: (args: TArgs) => Promise<unknown>) {
   const queryClient = useQueryClient()

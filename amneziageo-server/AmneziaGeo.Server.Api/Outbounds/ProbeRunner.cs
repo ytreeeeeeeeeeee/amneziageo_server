@@ -10,11 +10,8 @@ namespace AmneziaGeo.Server.Api.Outbounds;
 public sealed class ProbeRunner
 {
     private readonly IProbeLink _link;
-
     private readonly ProbeLive _live;
-
     private readonly TimeProvider _time;
-
     private readonly ILogger<ProbeRunner> _logger;
 
     /// <summary>

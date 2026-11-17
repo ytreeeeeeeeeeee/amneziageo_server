@@ -28,7 +28,7 @@ public sealed class CarrierHost : IDisposable
     /// <summary>
     /// Returns the loopback port the interface of an outbound speaks to, opening a carrier where the proxy changed.
     /// </summary>
-    public async Task<int> RaiseAsync(OutboundConfig outbound, CancellationToken ct)
+    public async Task<int> RaiseAsync(AwgOutboundConfig outbound, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(outbound);
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -113,7 +113,7 @@ public sealed class CarrierHost : IDisposable
     }
 
     // The header an outbound proves its keys with to the front of its server.
-    private static Func<string>? Token(OutboundConfig outbound) =>
+    private static Func<string>? Token(AwgOutboundConfig outbound) =>
         Curve25519.IsKey(outbound.PrivateKey) && Curve25519.IsKey(outbound.PeerKey)
             ? () => PeerToken.Header(outbound.PrivateKey, outbound.PeerKey, DateTimeOffset.UtcNow)
             : null;

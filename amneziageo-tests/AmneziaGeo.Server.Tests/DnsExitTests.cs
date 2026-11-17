@@ -11,10 +11,10 @@ public class DnsExitTests
 {
     private static readonly OutboundConfig[] Outbounds =
     [
-        new() { Name = "direct", Kind = OutboundKind.Local, Mark = 0xA601, Table = OutboundRules.MainTable },
-        new() { Name = "myvpn", Kind = OutboundKind.Wg, Mark = 0xA602, Table = 42602 },
-        new() { Name = "bor", Kind = OutboundKind.Wg, Mark = 0xA603, Table = 42603 },
-        new() { Name = "spare", Kind = OutboundKind.Wg, Mark = 0xA604, Table = 42604, IsEnabled = false },
+        new LocalOutboundConfig { Name = "direct", Kind = OutboundKind.Local, Mark = 0xA601, Table = OutboundRules.MainTable },
+        new AwgOutboundConfig() { Name = "myvpn", Kind = OutboundKind.Wg, Mark = 0xA602, Table = 42602 },
+        new AwgOutboundConfig() { Name = "bor", Kind = OutboundKind.Wg, Mark = 0xA603, Table = 42603 },
+        new AwgOutboundConfig() { Name = "spare", Kind = OutboundKind.Wg, Mark = 0xA604, Table = 42604, IsEnabled = false },
     ];
 
     private static RouteWays Ways(IReadOnlySet<string>? alive = null, params Balancer[] balancers) =>

@@ -231,13 +231,13 @@ function ChannelState({ outbound, t, language }: { outbound: Outbound; t: Text; 
     return <span className="text-alarm">{t("outbounds.noProbe")}</span>
   }
 
-  if (outbound.kind !== "wg") {
+  if (outbound.kind !== "wg" || !("lastHandshake" in state)) {
     return <span className="text-good">{t("outbounds.ready")}</span>
   }
 
   return (
     <span className={state.isAlive ? "text-ink" : "text-muted"}>
-      {state.lastHandshake === null
+      {(state.lastHandshake === null || state.lastHandshake === undefined)
         ? t("outbounds.noHandshake")
         : new Date(state.lastHandshake).toLocaleString(language)}
     </span>
@@ -316,11 +316,11 @@ function channelRank(outbound: Outbound): number {
     return 4
   }
 
-  if (outbound.kind !== "wg") {
+  if (outbound.kind !== "wg" || !("lastHandshake" in state)) {
     return 0
   }
 
-  return state.lastHandshake === null ? 5 : 0
+  return (state.lastHandshake === null || state.lastHandshake === undefined) ? 5 : 0
 }
 
 function groupRank(balancer: Balancer): number {
@@ -363,7 +363,7 @@ function matches(line: Line, find: string): boolean {
 
   return (
     line.channel.name.toLowerCase().includes(query) ||
-    line.channel.host.toLowerCase().includes(query) ||
-    String(line.channel.port).includes(query)
+    (line.channel.kind !== "local" && (line.channel.host.toLowerCase().includes(query) ||
+    String(line.channel.port).includes(query)))
   )
 }

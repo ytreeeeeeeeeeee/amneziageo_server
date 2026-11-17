@@ -1,5 +1,3 @@
-using AmneziaGeo.Server.Awg.Config;
-using AmneziaGeo.Server.Core.Crypto;
 using AmneziaGeo.Server.Routing.Outbound;
 using Microsoft.EntityFrameworkCore;
 
@@ -20,7 +18,11 @@ public enum OutboundOutcome
 /// <summary>
 /// The outbound a command produced, and why it was refused.
 /// </summary>
-public sealed record OutboundResult(OutboundOutcome Outcome, string Code, string Message, OutboundConfig? Record)
+public sealed record OutboundResult(
+    OutboundOutcome Outcome,
+    string Code,
+    string Message,
+    OutboundConfig? Record)
 {
     /// <summary>
     /// Tells whether the command went through.
@@ -45,18 +47,17 @@ public sealed record OutboundResult(OutboundOutcome Outcome, string Code, string
 /// </summary>
 public sealed class OutboundStore
 {
-    private static readonly char[] Breaks = [',', ' ', '\t', '\n', '\r'];
-
+    private readonly IReadOnlyList<IOutboundEntityFactory> _factories;
     private readonly AppDbContext _db;
-
     private readonly TimeProvider _time;
 
     /// <summary>
     /// ctor
     /// </summary>
-    public OutboundStore(AppDbContext db, TimeProvider? time = null)
+    public OutboundStore(AppDbContext db, IEnumerable<IOutboundEntityFactory> factories, TimeProvider? time = null)
     {
         _db = db;
+        _factories = [.. factories];
         _time = time ?? TimeProvider.System;
     }
 
@@ -70,8 +71,7 @@ public sealed class OutboundStore
             .OrderBy(outbound => outbound.Position)
             .ToListAsync(ct)
             .ConfigureAwait(false);
-
-        return [.. found.Select(Read)];
+        return [.. found.Select(one => one.ToConfig())];
     }
 
     /// <summary>
@@ -83,8 +83,7 @@ public sealed class OutboundStore
             .AsNoTracking()
             .FirstOrDefaultAsync(outbound => outbound.Id == id, ct)
             .ConfigureAwait(false);
-
-        return found is null ? null : Read(found);
+        return found is null ? null : found.ToConfig();
     }
 
     /// <summary>
@@ -101,9 +100,9 @@ public sealed class OutboundStore
         }
 
         var now = _time.GetUtcNow();
-        var entity = new OutboundEntity { CreatedUtc = now, UpdatedUtc = now };
-        Write(entity, OutboundDefaults.Direct());
-
+        var entity = Create(LocalOutboundDefaults.Direct());
+        entity.CreatedUtc = now;
+        entity.UpdatedUtc = now;
         _db.Outbounds.Add(entity);
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);
     }
@@ -114,7 +113,6 @@ public sealed class OutboundStore
     public async Task<OutboundResult> AddAsync(OutboundConfig draft, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(draft);
-
         if (await TakenAsync(draft.Name, 0, ct).ConfigureAwait(false))
         {
             return Taken(draft.Name);
@@ -129,23 +127,21 @@ public sealed class OutboundStore
         var full = draft with
         {
             Mark = mark,
-            Table = OutboundRules.TableOf(mark, draft.Kind),
+            Table = OutboundRules.TableOf(mark, draft.UsesInterface),
             Position = await NextPositionAsync(ct).ConfigureAwait(false),
         };
-
         if (OutboundRules.Check(full) is { } fault)
         {
             return OutboundResult.No(OutboundOutcome.Invalid, fault.Code, fault.Message);
         }
 
         var now = _time.GetUtcNow();
-        var entity = new OutboundEntity { CreatedUtc = now, UpdatedUtc = now };
-        Write(entity, full);
-
+        var entity = Create(full);
+        entity.CreatedUtc = now;
+        entity.UpdatedUtc = now;
         _db.Outbounds.Add(entity);
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);
-
-        return OutboundResult.Done(Read(entity));
+        return OutboundResult.Done(entity.ToConfig());
     }
 
     /// <summary>
@@ -154,7 +150,6 @@ public sealed class OutboundStore
     public async Task<OutboundResult> ChangeAsync(long id, OutboundConfig draft, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(draft);
-
         var entity = await _db.Outbounds.FirstOrDefaultAsync(outbound => outbound.Id == id, ct).ConfigureAwait(false);
         if (entity is null)
         {
@@ -167,7 +162,12 @@ public sealed class OutboundStore
         }
 
         var mark = (uint)entity.Mark;
-        var full = draft with { Mark = mark, Table = OutboundRules.TableOf(mark, draft.Kind), Position = entity.Position };
+        var full = draft with
+        {
+            Mark = mark,
+            Table = OutboundRules.TableOf(mark, draft.UsesInterface),
+            Position = entity.Position
+        };
         if (OutboundRules.Check(full) is { } fault)
         {
             return OutboundResult.No(OutboundOutcome.Invalid, fault.Code, fault.Message);
@@ -175,12 +175,28 @@ public sealed class OutboundStore
 
         var old = entity.Name;
         var now = _time.GetUtcNow();
-        Write(entity, full);
+        var transaction = await _db.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
+        await using var disposal = transaction.ConfigureAwait(false);
+        var replacement = Create(full);
+        if (entity.GetType() != replacement.GetType())
+        {
+            replacement.Id = entity.Id;
+            replacement.CreatedUtc = entity.CreatedUtc;
+            _db.Outbounds.Remove(entity);
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+            entity = replacement;
+            _db.Outbounds.Add(entity);
+        }
+        else
+        {
+            entity.Update(full);
+        }
+
         entity.UpdatedUtc = now;
         await NameFollow.WayAsync(_db, old, entity.Name, now, ct).ConfigureAwait(false);
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);
-
-        return OutboundResult.Done(Read(entity));
+        await transaction.CommitAsync(ct).ConfigureAwait(false);
+        return OutboundResult.Done(entity.ToConfig());
     }
 
     /// <summary>
@@ -197,8 +213,7 @@ public sealed class OutboundStore
         entity.IsEnabled = on;
         entity.UpdatedUtc = _time.GetUtcNow();
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);
-
-        return OutboundResult.Done(Read(entity));
+        return OutboundResult.Done(entity.ToConfig());
     }
 
     /// <summary>
@@ -218,10 +233,9 @@ public sealed class OutboundStore
             return OutboundResult.No(OutboundOutcome.Invalid, "outbound-in-use", user);
         }
 
-        var gone = Read(entity);
+        var gone = entity.ToConfig();
         _db.Outbounds.Remove(entity);
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);
-
         return OutboundResult.Done(gone);
     }
 
@@ -245,16 +259,14 @@ public sealed class OutboundStore
                 .OrderBy(one => one.Position)
                 .FirstOrDefaultAsync(ct)
                 .ConfigureAwait(false);
-
         if (neighbour is null)
         {
-            return OutboundResult.Done(Read(entity));
+            return OutboundResult.Done(entity.ToConfig());
         }
 
         (entity.Position, neighbour.Position) = (neighbour.Position, entity.Position);
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);
-
-        return OutboundResult.Done(Read(entity));
+        return OutboundResult.Done(entity.ToConfig());
     }
 
     private async Task<string?> UserAsync(string name, string live, CancellationToken ct)
@@ -309,7 +321,6 @@ public sealed class OutboundStore
     private async Task<int> NextPositionAsync(CancellationToken ct)
     {
         var last = await _db.Outbounds.MaxAsync(outbound => (int?)outbound.Position, ct).ConfigureAwait(false);
-
         return (last ?? 0) + 1;
     }
 
@@ -322,112 +333,13 @@ public sealed class OutboundStore
             "name-taken",
             $"the panel already carries an outbound called '{name}'");
 
-    private static OutboundConfig Read(OutboundEntity entity) => new()
+    private OutboundEntity Create(OutboundConfig config)
     {
-        Id = entity.Id,
-        Name = entity.Name,
-        Kind = entity.Kind,
-        Position = entity.Position,
-        IsEnabled = entity.IsEnabled,
-        Host = entity.Host,
-        Port = entity.Port,
-        Proxy = entity.Proxy,
-        PrivateKey = entity.PrivateKey,
-        PublicKey = entity.PublicKey,
-        PeerKey = entity.PeerKey,
-        PresharedKey = entity.PresharedKey,
-        Address = Parts(entity.Address),
-        Dns = Parts(entity.Dns),
-        Mtu = entity.Mtu,
-        Keepalive = entity.Keepalive,
-        Probe = entity.Probe,
-        ProbeEvery = entity.ProbeEvery,
-        ClosePrivate = entity.ClosePrivate,
-        Mark = (uint)entity.Mark,
-        Table = entity.Table,
-        CreatedUtc = entity.CreatedUtc,
-        UpdatedUtc = entity.UpdatedUtc,
-        Obfuscation = new ObfuscationSettings
-        {
-            Jc = entity.Jc,
-            Jmin = entity.Jmin,
-            Jmax = entity.Jmax,
-            S1 = entity.S1,
-            S2 = entity.S2,
-            S3 = entity.S3,
-            S4 = entity.S4,
-            H1 = entity.H1,
-            H2 = entity.H2,
-            H3 = entity.H3,
-            H4 = entity.H4,
-            I1 = entity.I1,
-            I2 = entity.I2,
-            I3 = entity.I3,
-            I4 = entity.I4,
-            I5 = entity.I5,
-            HeaderProtectionKey = entity.HeaderProtectionKey,
-            ContentPaddingAddition = entity.ContentPaddingAddition,
-            RekeyAfterTime = entity.RekeyAfterTime,
-            RekeyTimeout = entity.RekeyTimeout,
-            RejectAfterTime = entity.RejectAfterTime,
-            KeepaliveTimeout = entity.KeepaliveTimeout,
-            MaxHandshakeAttempts = entity.MaxHandshakeAttempts,
-            RandomTrailers = entity.RandomTrailers,
-            DisableCookies = entity.DisableCookies,
-        },
-    };
-
-    private static void Write(OutboundEntity entity, OutboundConfig outbound)
-    {
-        entity.Name = outbound.Name;
-        entity.Kind = outbound.Kind;
-        entity.Position = outbound.Position;
-        entity.IsEnabled = outbound.IsEnabled;
-        entity.Host = outbound.Host.Trim();
-        entity.Port = outbound.Port;
-        entity.Proxy = outbound.Proxy.Trim();
-        entity.PrivateKey = outbound.PrivateKey;
-        entity.PublicKey = outbound.PrivateKey.Length > 0 ? Curve25519.PublicOf(outbound.PrivateKey) : string.Empty;
-        entity.PeerKey = outbound.PeerKey.Trim();
-        entity.PresharedKey = outbound.PresharedKey.Trim();
-        entity.Address = string.Join(", ", outbound.Address);
-        entity.Dns = string.Join(", ", outbound.Dns);
-        entity.Mtu = outbound.Mtu;
-        entity.Keepalive = outbound.Keepalive;
-        entity.Probe = outbound.Probe.Trim();
-        entity.ProbeEvery = outbound.ProbeEvery;
-        entity.ClosePrivate = outbound.ClosePrivate;
-        entity.Mark = outbound.Mark;
-        entity.Table = outbound.Table;
-        entity.Jc = outbound.Obfuscation.Jc;
-        entity.Jmin = outbound.Obfuscation.Jmin;
-        entity.Jmax = outbound.Obfuscation.Jmax;
-        entity.S1 = outbound.Obfuscation.S1;
-        entity.S2 = outbound.Obfuscation.S2;
-        entity.S3 = outbound.Obfuscation.S3;
-        entity.S4 = outbound.Obfuscation.S4;
-        entity.H1 = outbound.Obfuscation.H1;
-        entity.H2 = outbound.Obfuscation.H2;
-        entity.H3 = outbound.Obfuscation.H3;
-        entity.H4 = outbound.Obfuscation.H4;
-        entity.I1 = Text(outbound.Obfuscation.I1);
-        entity.I2 = Text(outbound.Obfuscation.I2);
-        entity.I3 = Text(outbound.Obfuscation.I3);
-        entity.I4 = Text(outbound.Obfuscation.I4);
-        entity.I5 = Text(outbound.Obfuscation.I5);
-        entity.HeaderProtectionKey = outbound.Obfuscation.HeaderProtectionKey.Trim();
-        entity.ContentPaddingAddition = outbound.Obfuscation.ContentPaddingAddition.Trim();
-        entity.RekeyAfterTime = outbound.Obfuscation.RekeyAfterTime.Trim();
-        entity.RekeyTimeout = outbound.Obfuscation.RekeyTimeout.Trim();
-        entity.RejectAfterTime = outbound.Obfuscation.RejectAfterTime.Trim();
-        entity.KeepaliveTimeout = outbound.Obfuscation.KeepaliveTimeout.Trim();
-        entity.MaxHandshakeAttempts = outbound.Obfuscation.MaxHandshakeAttempts.Trim();
-        entity.RandomTrailers = outbound.Obfuscation.RandomTrailers;
-        entity.DisableCookies = outbound.Obfuscation.DisableCookies;
+        var entity = _factories
+                         .Select(factory => factory.Create(config))
+                         .FirstOrDefault(one => one is not null)
+                     ?? throw new InvalidOperationException($"no persistence is registered for '{config.Kind}'");
+        entity.Update(config);
+        return entity;
     }
-
-    private static string? Text(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-
-    private static IReadOnlyList<string> Parts(string text) =>
-        [.. text.Split(Breaks, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
 }

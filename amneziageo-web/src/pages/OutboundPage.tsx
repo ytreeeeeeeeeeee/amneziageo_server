@@ -39,7 +39,7 @@ function NewOutbound() {
   return (
     <OutboundForm
       start={draftOf(fresh.data)}
-      publicKey={fresh.data.publicKey}
+      source={fresh.data}
       pending={add.isPending}
       error={add.error}
       onSave={(draft) => void add.mutateAsync(draft).then(() => navigate(back))}
@@ -92,7 +92,7 @@ function HeldOutbound({ outboundId }: { outboundId: number }) {
 
       <OutboundForm
         start={draftOf(held)}
-        publicKey={held.publicKey}
+        source={held}
         self={held.name}
         pending={change.isPending}
         error={change.error}

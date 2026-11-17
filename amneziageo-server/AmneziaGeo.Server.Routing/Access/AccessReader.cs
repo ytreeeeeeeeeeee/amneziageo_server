@@ -125,7 +125,7 @@ public static class AccessReader
         var outbound = plan?.Ways.Outbounds.FirstOrDefault(one => one.Mark == mark) ?? plan?.Ways.Outbound(named);
         var path = outbound is null
             ? string.Empty
-            : OutboundKind.HasLink(outbound.Kind) ? AccessPath.Relay : AccessPath.Local;
+            : outbound.UsesInterface ? AccessPath.Relay : AccessPath.Local;
 
         return (outbound?.Name ?? named, plan?.Ways.Balancer(named)?.Name ?? string.Empty, path);
     }

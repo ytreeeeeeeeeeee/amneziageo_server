@@ -9,33 +9,33 @@ namespace AmneziaGeo.Server.Tests;
 public class OutboundTests
 {
     private const string Sample = """
-        [Interface]
-        PrivateKey = OMMbTfBGZmzVOenkLmL2hFRuMbAG9pOZzTZ4L1H+wF0=
-        Address = 10.8.1.5/32, fd00::5/128
-        DNS = 1.1.1.1, 8.8.8.8
-        MTU = 1380
-        Jc = 4
-        Jmin = 50
-        Jmax = 1000
-        S1 = 76
-        S2 = 45
-        H1 = 1234567
-        H2 = 2234567
-        H3 = 3234567
-        H4 = 4234567
+                                  [Interface]
+                                  PrivateKey = OMMbTfBGZmzVOenkLmL2hFRuMbAG9pOZzTZ4L1H+wF0=
+                                  Address = 10.8.1.5/32, fd00::5/128
+                                  DNS = 1.1.1.1, 8.8.8.8
+                                  MTU = 1380
+                                  Jc = 4
+                                  Jmin = 50
+                                  Jmax = 1000
+                                  S1 = 76
+                                  S2 = 45
+                                  H1 = 1234567
+                                  H2 = 2234567
+                                  H3 = 3234567
+                                  H4 = 4234567
 
-        [Peer]
-        PublicKey = eOWG0GXBLrpZOZ+FCwCJTvZ5rBEKHZ8NPvxNM3nJPl4=
-        PresharedKey = mDrTJlNmwLJvJHm1TQKHKKFAF0eRDhOOP4nHDXBVOgo=
-        AllowedIPs = 0.0.0.0/0, ::/0
-        Endpoint = bor.sytes.net:51821
-        PersistentKeepalive = 25
-        """;
+                                  [Peer]
+                                  PublicKey = eOWG0GXBLrpZOZ+FCwCJTvZ5rBEKHZ8NPvxNM3nJPl4=
+                                  PresharedKey = mDrTJlNmwLJvJHm1TQKHKKFAF0eRDhOOP4nHDXBVOgo=
+                                  AllowedIPs = 0.0.0.0/0, ::/0
+                                  Endpoint = bor.sytes.net:51821
+                                  PersistentKeepalive = 25
+                                  """;
 
     [Fact]
     public void ATunnelIsReadOutOfAClientConfiguration()
     {
-        var read = OutboundImport.Read(Sample, "awgbor");
+        var read = AwgOutboundImport.Read(Sample, "awgbor");
 
         Assert.Null(read.Fault);
         var outbound = read.Outbound!;
@@ -60,7 +60,7 @@ public class OutboundTests
     [InlineData("[Interface]\nPrivateKey = OMMbTfBGZmzVOenkLmL2hFRuMbAG9pOZzTZ4L1H+wF0=")]
     public void AConfigurationWithoutAKeyOrAServerIsRefused(string text)
     {
-        var read = OutboundImport.Read(text, "awgbor");
+        var read = AwgOutboundImport.Read(text, "awgbor");
 
         Assert.Null(read.Outbound);
         Assert.Equal("bad-import", read.Fault!.Code);
@@ -71,7 +71,7 @@ public class OutboundTests
     {
         var text = Sample.Replace("bor.sytes.net:51821", "[fd00::1]:51821", StringComparison.Ordinal);
 
-        var read = OutboundImport.Read(text, "awgbor");
+        var read = AwgOutboundImport.Read(text, "awgbor");
 
         Assert.Equal("fd00::1", read.Outbound!.Host);
         Assert.Equal(51821, read.Outbound.Port);
@@ -82,7 +82,8 @@ public class OutboundTests
     {
         var outbound = Tunnel() with { Mark = OutboundRules.FirstMark };
 
-        var update = OutboundDevice.Update(outbound, new System.Net.IPEndPoint(System.Net.IPAddress.Parse("46.8.237.222"), outbound.Port));
+        var update = AwgOutboundDevice.Update(outbound,
+            new System.Net.IPEndPoint(System.Net.IPAddress.Parse("46.8.237.222"), outbound.Port));
 
         Assert.Equal(outbound.Name, update.Name);
         Assert.Equal(outbound.PrivateKey, update.PrivateKey);
@@ -99,9 +100,9 @@ public class OutboundTests
     [Fact]
     public void AMarkCarriesItsOwnTableAndItsPlaceInTheRuleList()
     {
-        Assert.Equal(OutboundRules.FirstTable, OutboundRules.TableOf(OutboundRules.FirstMark, OutboundKind.Wg));
-        Assert.Equal(OutboundRules.FirstTable + 3, OutboundRules.TableOf(OutboundRules.FirstMark + 3, OutboundKind.Wg));
-        Assert.Equal(OutboundRules.MainTable, OutboundRules.TableOf(OutboundRules.FirstMark + 3, OutboundKind.Local));
+        Assert.Equal(OutboundRules.FirstTable, OutboundRules.TableOf(OutboundRules.FirstMark, true));
+        Assert.Equal(OutboundRules.FirstTable + 3, OutboundRules.TableOf(OutboundRules.FirstMark + 3, true));
+        Assert.Equal(OutboundRules.MainTable, OutboundRules.TableOf(OutboundRules.FirstMark + 3, false));
         Assert.Equal(OutboundRules.FirstPriority, OutboundRules.PriorityOf(OutboundRules.FirstMark));
     }
 
@@ -109,7 +110,7 @@ public class OutboundTests
     public void ATunnelWithEverythingInPlaceHolds()
     {
         Assert.Null(OutboundRules.Check(Tunnel()));
-        Assert.Null(OutboundRules.Check(OutboundDefaults.Direct()));
+        Assert.Null(OutboundRules.Check(LocalOutboundDefaults.Direct()));
     }
 
     [Theory]
@@ -138,18 +139,13 @@ public class OutboundTests
         var tunnel = Tunnel();
         var outbound = tunnel with
         {
-            Obfuscation = tunnel.Obfuscation with { HeaderProtectionKey = Curve25519.Create().PrivateKey, S1 = 15, S2 = 30, S3 = 0, S4 = 0 },
+            Obfuscation = tunnel.Obfuscation with
+            {
+                HeaderProtectionKey = Curve25519.Create().PrivateKey, S1 = 15, S2 = 30, S3 = 0, S4 = 0
+            },
         };
 
         Assert.Equal("bad-header-junk", OutboundRules.Check(outbound)!.Code);
-    }
-
-    [Fact]
-    public void AnOutboundThroughTheHostItselfCarriesNoServer()
-    {
-        var outbound = OutboundDefaults.Direct() with { Host = "bor.sytes.net" };
-
-        Assert.Equal("bad-kind", OutboundRules.Check(outbound)!.Code);
     }
 
     [Fact]
@@ -165,15 +161,15 @@ public class OutboundTests
     {
         var now = new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.Zero);
 
-        Assert.True(OutboundDevice.Alive(now.AddMinutes(-1), now));
-        Assert.False(OutboundDevice.Alive(now.AddMinutes(-5), now));
-        Assert.False(OutboundDevice.Alive(null, now));
+        Assert.True(AwgOutboundDevice.Alive(now.AddMinutes(-1), now));
+        Assert.False(AwgOutboundDevice.Alive(now.AddMinutes(-5), now));
+        Assert.False(AwgOutboundDevice.Alive(null, now));
     }
 
     [Fact]
     public void TheRulesetMasqueradesAndClampsEveryWayOut()
     {
-        var outbounds = (OutboundConfig[])[OutboundDefaults.Direct(), Tunnel()];
+        var outbounds = (OutboundConfig[])[LocalOutboundDefaults.Direct(), Tunnel()];
 
         var text = OutboundRuleset.Text(outbounds, "eth0");
 
@@ -187,7 +183,7 @@ public class OutboundTests
     [Fact]
     public void TheRulesetLeavesOutWhatIsTurnedOff()
     {
-        var outbounds = (OutboundConfig[])[OutboundDefaults.Direct(), Tunnel() with { IsEnabled = false }];
+        var outbounds = (OutboundConfig[])[LocalOutboundDefaults.Direct(), Tunnel() with { IsEnabled = false }];
 
         Assert.Equal(["eth0"], OutboundRuleset.Links(outbounds, "eth0"));
     }
@@ -197,8 +193,8 @@ public class OutboundTests
     {
         var outbounds = (OutboundConfig[])
         [
-            OutboundDefaults.Direct(),
-            OutboundDefaults.Direct() with { Name = "second" },
+            LocalOutboundDefaults.Direct(),
+            LocalOutboundDefaults.Direct() with { Name = "second" },
         ];
 
         Assert.Equal(["eth0"], OutboundRuleset.Links(outbounds, "eth0"));
@@ -210,13 +206,14 @@ public class OutboundTests
         var outbound = Tunnel() with { Obfuscation = new ObfuscationSettings() };
 
         Assert.Null(OutboundRules.Check(outbound));
-        Assert.Null(OutboundDevice.Update(outbound, new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, outbound.Port)).Obfuscation);
+        Assert.Null(AwgOutboundDevice
+            .Update(outbound, new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, outbound.Port)).Obfuscation);
     }
 
     [Fact]
     public void ATunnelLetsBackOnlyWhatAnswersTheHost()
     {
-        var text = OutboundRuleset.Text([OutboundDefaults.Direct(), Tunnel()], "eth0");
+        var text = OutboundRuleset.Text([LocalOutboundDefaults.Direct(), Tunnel()], "eth0");
 
         Assert.Equal(2, Times(text, "iifname { \"awgbor\" } ct state established,related accept"));
         Assert.Equal(2, Times(text, "iifname { \"awgbor\" } drop"));
@@ -229,7 +226,7 @@ public class OutboundTests
     [Fact]
     public void NothingGoesBackOutTheUplinkItCameIn()
     {
-        var text = OutboundRuleset.Text([OutboundDefaults.Direct(), Tunnel() with { IsEnabled = false }], "eth0");
+        var text = OutboundRuleset.Text([LocalOutboundDefaults.Direct(), Tunnel() with { IsEnabled = false }], "eth0");
 
         Assert.Contains("iifname \"eth0\" oifname \"eth0\" drop", text, StringComparison.Ordinal);
         Assert.DoesNotContain("iifname {", text, StringComparison.Ordinal);
@@ -246,7 +243,8 @@ public class OutboundTests
             "oifname \"awgbor\" ct state new ip daddr { 10.0.0.0/8, 100.64.0.0/10, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16 } reject",
             closed,
             StringComparison.Ordinal);
-        Assert.Contains("oifname \"awgbor\" ct state new ip6 daddr { fc00::/7, fe80::/10 } reject", closed, StringComparison.Ordinal);
+        Assert.Contains("oifname \"awgbor\" ct state new ip6 daddr { fc00::/7, fe80::/10 } reject", closed,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("reject", open, StringComparison.Ordinal);
         Assert.Contains("iifname { \"awgbor\" } drop", open, StringComparison.Ordinal);
     }
@@ -254,15 +252,15 @@ public class OutboundTests
     [Fact]
     public void ANewTunnelClosesThePrivateNetworks()
     {
-        Assert.True(OutboundDefaults.Fresh("awgbor").ClosePrivate);
-        Assert.True(OutboundImport.Read(Sample, "awgbor").Outbound!.ClosePrivate);
+        Assert.True(AwgOutboundDefaults.Fresh("awgbor").ClosePrivate);
+        Assert.True(AwgOutboundImport.Read(Sample, "awgbor").Outbound!.ClosePrivate);
     }
 
     [Fact]
     public void TheInterfaceTakesEachAddressAlone()
     {
-        Assert.Equal(["10.9.0.2/32", "fd00::2/128"], OutboundDevice.Hosts(["10.9.0.2/24", "fd00::2/64"]));
-        Assert.Equal(["10.8.1.5/32"], OutboundDevice.Hosts(["10.8.1.5/32"]));
+        Assert.Equal(["10.9.0.2/32", "fd00::2/128"], AwgOutboundDevice.Hosts(["10.9.0.2/24", "fd00::2/64"]));
+        Assert.Equal(["10.8.1.5/32"], AwgOutboundDevice.Hosts(["10.8.1.5/32"]));
     }
 
     [Fact]
@@ -272,28 +270,58 @@ public class OutboundTests
         Assert.False(OutboundAnswers.Draft(Asked(false)).ClosePrivate);
     }
 
-    private static OutboundRequest Asked(bool? closePrivate) => new(
-        Name: "awgbor",
-        Kind: OutboundKind.Wg,
-        IsEnabled: true,
-        Host: "bor.sytes.net",
-        Port: 51821,
-        Proxy: null,
-        PrivateKey: null,
-        PeerKey: null,
-        PresharedKey: null,
-        Address: ["10.8.1.5/32"],
-        Dns: [],
-        Mtu: 1380,
-        Keepalive: 25,
-        Probe: null,
-        ProbeEvery: 30,
-        ClosePrivate: closePrivate,
-        Obfuscation: null);
+    [Fact]
+    public void ALocalDraftHasOnlyCommonSettings()
+    {
+        var request = new LocalOutboundRequest
+            { Name = "direct", IsEnabled = true, Dns = ["1.1.1.1"], ClosePrivate = false };
+        var outbound = Assert.IsType<LocalOutboundConfig>(OutboundAnswers.Draft(request));
+        var response = Answers.Outbound(outbound, null, true);
+        Assert.IsType<LocalOutboundResponse>(response);
+        Assert.Equal(request.Dns, response.Dns);
+        Assert.False(response.ClosePrivate);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AwgSettingsKeepTheirOwnContractAndSecretVisibility(bool websocket)
+    {
+        var tunnel = Tunnel();
+        var request = (websocket ? new WsOutboundRequest() : new AwgOutboundRequest()) with
+        {
+            Name = tunnel.Name, IsEnabled = true, Host = tunnel.Host, Port = tunnel.Port,
+            Proxy = websocket ? "wss://proxy.example.net:443" : string.Empty,
+            PrivateKey = tunnel.PrivateKey, PeerKey = tunnel.PeerKey,
+            PresharedKey = "mDrTJlNmwLJvJHm1TQKHKKFAF0eRDhOOP4nHDXBVOgo=",
+            Address = [.. tunnel.Address], Mtu = tunnel.Mtu, Keepalive = tunnel.Keepalive,
+            Obfuscation = AmneziaGeo.Server.Api.Configs.ConfigAnswers.Obfuscation(tunnel.Obfuscation),
+        };
+        var outbound = Assert.IsType<AwgOutboundConfig>(OutboundAnswers.Draft(request));
+        var response = Assert.IsType<AwgOutboundResponse>(Answers.Outbound(outbound, null, true));
+        var hidden = Assert.IsType<AwgOutboundResponse>(Answers.Outbound(outbound, null, false));
+        Assert.Equal(request.Kind, response.Kind);
+        Assert.Equal(request.Host, response.Host);
+        Assert.Equal(request.PrivateKey, response.PrivateKey);
+        Assert.Equal(request.PeerKey, response.PeerKey);
+        Assert.Equal(request.PresharedKey, response.PresharedKey);
+        Assert.Equal(request.Address, response.Address);
+        Assert.Equal(request.Obfuscation, response.Obfuscation);
+        Assert.Null(hidden.PrivateKey);
+        Assert.Null(hidden.PresharedKey);
+    }
+
+    private static readonly OutboundAnswers Answers = new([new LocalOutboundResponses(), new AwgOutboundResponses()]);
+
+    private static AwgOutboundRequest Asked(bool? closePrivate) => new()
+    {
+        Name = "awgbor", IsEnabled = true, Host = "bor.sytes.net", Port = 51821,
+        Address = ["10.8.1.5/32"], Mtu = 1380, Keepalive = 25, ProbeEvery = 30, ClosePrivate = closePrivate,
+    };
 
     private static int Times(string text, string part) => text.Split(part).Length - 1;
 
-    private static OutboundConfig Tunnel() => new()
+    private static AwgOutboundConfig Tunnel() => new AwgOutboundConfig()
     {
         Name = "awgbor",
         Kind = OutboundKind.Wg,
@@ -308,10 +336,11 @@ public class OutboundTests
         Keepalive = 25,
         Mark = OutboundRules.FirstMark,
         Table = OutboundRules.FirstTable,
-        Obfuscation = new ObfuscationSettings { Jc = 4, Jmin = 50, Jmax = 1000, S1 = 76, S2 = 45, H1 = "5", H2 = "6", H3 = "7", H4 = "8" },
+        Obfuscation = new ObfuscationSettings
+            { Jc = 4, Jmin = 50, Jmax = 1000, S1 = 76, S2 = 45, H1 = "5", H2 = "6", H3 = "7", H4 = "8" },
     };
 
-    private static OutboundConfig Break(OutboundConfig outbound, string setting) => setting switch
+    private static OutboundConfig Break(AwgOutboundConfig outbound, string setting) => setting switch
     {
         "Name" => outbound with { Name = "Awg Bor" },
         "Kind" => outbound with { Kind = "socks" },
@@ -324,6 +353,6 @@ public class OutboundTests
         "Dns" => outbound with { Dns = ["nameserver"] },
         "Mtu" => outbound with { Mtu = 60 },
         "Keepalive" => outbound with { Keepalive = -1 },
-        _ => outbound with { Mark = 1, Table = OutboundRules.TableOf(1, OutboundKind.Wg) },
+        _ => outbound with { Mark = 1, Table = OutboundRules.TableOf(1, true) },
     };
 }

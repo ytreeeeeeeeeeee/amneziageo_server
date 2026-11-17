@@ -8,7 +8,6 @@ namespace AmneziaGeo.Server.Routing.Outbound;
 public static class OutboundMark
 {
     private const int SocketLevel = 1;
-
     private const int MarkOption = 36;
 
     /// <summary>

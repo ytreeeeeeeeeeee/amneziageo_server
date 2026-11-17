@@ -66,6 +66,8 @@ public static class ServerDatabase
         services.AddScoped<ClientStore>();
         services.AddScoped<TrafficStore>();
         services.AddScoped<GeoStore>();
+        services.AddSingleton<IOutboundEntityFactory, LocalOutboundEntityFactory>();
+        services.AddSingleton<IOutboundEntityFactory, AwgOutboundEntityFactory>();
         services.AddScoped<OutboundStore>();
         services.AddScoped<RouteStore>();
         services.AddScoped<BalanceStore>();

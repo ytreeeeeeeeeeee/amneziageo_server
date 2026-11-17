@@ -66,7 +66,7 @@ public static class OutboundRuleset
             text.Append("\t\tiifname \"").Append(uplink).Append("\" oifname \"").Append(uplink).Append("\" drop\n");
         }
 
-        foreach (var outbound in outbounds.Where(one => one.IsEnabled && one.ClosePrivate && OutboundKind.HasLink(one.Kind)))
+        foreach (var outbound in outbounds.Where(one => one.IsEnabled && one.ClosePrivate && one.UsesInterface))
         {
             Close(text, outbound.Name);
         }
@@ -87,7 +87,7 @@ public static class OutboundRuleset
         return
         [
             .. outbounds
-                .Where(one => one.IsEnabled && OutboundKind.HasLink(one.Kind))
+                .Where(one => one.IsEnabled && one.UsesInterface)
                 .Select(one => one.Name)
                 .Distinct(StringComparer.Ordinal),
         ];
@@ -103,7 +103,7 @@ public static class OutboundRuleset
         var links = new List<string>();
         foreach (var outbound in outbounds.Where(one => one.IsEnabled))
         {
-            var link = OutboundKind.HasLink(outbound.Kind) ? outbound.Name : uplink;
+            var link = outbound.UsesInterface ? outbound.Name : uplink;
             if (link.Length > 0 && !links.Contains(link))
             {
                 links.Add(link);

@@ -1,9 +1,5 @@
 using System.Collections.Concurrent;
-using System.Net;
 using System.Net.Sockets;
-using AmneziaGeo.Server.Awg.Device;
-using AmneziaGeo.Server.Awg.Netlink;
-using AmneziaGeo.Server.Routing.Carrier;
 using AmneziaGeo.Server.Routing.Outbound;
 using AmneziaGeo.Server.Routing.Probe;
 
@@ -16,11 +12,7 @@ public sealed class OutboundHost : IDisposable
 {
     private readonly IHostNetwork _network;
 
-    private readonly IAwgDevices _devices;
-
-    private readonly TimeProvider _time;
-
-    private readonly CarrierHost? _carriers;
+    private readonly IReadOnlyList<IOutboundDriver> _drivers;
 
     private readonly ProbeLive? _probes;
 
@@ -35,15 +27,11 @@ public sealed class OutboundHost : IDisposable
     /// </summary>
     public OutboundHost(
         IHostNetwork network,
-        IAwgDevices devices,
-        TimeProvider? time = null,
-        CarrierHost? carriers = null,
+        IEnumerable<IOutboundDriver> drivers,
         ProbeLive? probes = null)
     {
         _network = network;
-        _devices = devices;
-        _time = time ?? TimeProvider.System;
-        _carriers = carriers;
+        _drivers = [.. drivers];
         _probes = probes;
     }
 
@@ -75,10 +63,7 @@ public sealed class OutboundHost : IDisposable
                 return OutboundState.Missing(outbound.Name);
             }
 
-            if (OutboundKind.HasLink(outbound.Kind))
-            {
-                await RaiseAsync(outbound, ct).ConfigureAwait(false);
-            }
+            await Driver(outbound).ApplyAsync(outbound, ct).ConfigureAwait(false);
 
             await _network
                 .RuleAsync(outbound.Mark, outbound.Table, OutboundRules.PriorityOf(outbound.Mark), true, ct)
@@ -88,7 +73,7 @@ public sealed class OutboundHost : IDisposable
             return State(outbound);
         }
         catch (Exception ex)
-            when (ex is HostNetworkException or NetlinkException or SocketException or InvalidOperationException)
+            when (ex is HostNetworkException or SocketException or InvalidOperationException)
         {
             return OutboundState.Missing(outbound.Name, ex.Message);
         }
@@ -137,29 +122,12 @@ public sealed class OutboundHost : IDisposable
     {
         ArgumentNullException.ThrowIfNull(outbound);
 
-        if (!outbound.IsEnabled || !OutboundKind.HasLink(outbound.Kind))
+        if (!outbound.IsEnabled)
         {
             return false;
         }
 
-        // Lays a gone interface again with its keys and its carrier.
-        if (!_network.HasLink(outbound.Name))
-        {
-            await RaiseAsync(outbound, ct).ConfigureAwait(false);
-
-            return true;
-        }
-
-        if (!IsDown(outbound))
-        {
-            return false;
-        }
-
-        await _network.AddressAsync(outbound.Name, OutboundDevice.Hosts(outbound.Address), ct).ConfigureAwait(false);
-        await _network.UpAsync(outbound.Name, outbound.Mtu, ct).ConfigureAwait(false);
-        await _network.RouteAsync(outbound.Name, outbound.Table, ct).ConfigureAwait(false);
-
-        return true;
+        return await Driver(outbound).MendAsync(outbound, ct).ConfigureAwait(false);
     }
 
     private async Task TakeOffAsync(OutboundConfig outbound, CancellationToken ct)
@@ -169,17 +137,7 @@ public sealed class OutboundHost : IDisposable
             .ConfigureAwait(false);
         _ruled.TryRemove(outbound.Mark, out _);
 
-        if (!OutboundKind.HasLink(outbound.Kind))
-        {
-            return;
-        }
-
-        _carriers?.Withdraw(outbound.Name);
-        await _network.ClearRouteAsync(outbound.Table, ct).ConfigureAwait(false);
-        if (_network.HasLink(outbound.Name))
-        {
-            await _network.RemoveLinkAsync(outbound.Name, ct).ConfigureAwait(false);
-        }
+        await Driver(outbound).WithdrawAsync(outbound, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -221,31 +179,11 @@ public sealed class OutboundHost : IDisposable
         ArgumentNullException.ThrowIfNull(outbound);
 
         var reading = _probes?.Find(outbound.Name);
-        if (!OutboundKind.HasLink(outbound.Kind))
-        {
-            return new OutboundState(outbound.Name, true, string.Empty, null, 0, 0, true, string.Empty, reading)
-            {
-                Counted = false,
-            };
-        }
-
         try
         {
-            var state = OutboundDevice.State(outbound, _devices.Find(outbound.Name), _time.GetUtcNow()) with
-            {
-                Probe = reading,
-            };
-
-            if (outbound.IsEnabled && !_network.HasLink(outbound.Name))
-            {
-                return state with { IsAlive = false, Fault = $"the interface '{outbound.Name}' is gone" };
-            }
-
-            return IsDown(outbound)
-                ? state with { IsAlive = false, Fault = $"the interface '{outbound.Name}' is down" }
-                : state;
+            return Driver(outbound).State(outbound) with { Probe = reading };
         }
-        catch (Exception ex) when (ex is NetlinkException or IOException or InvalidOperationException)
+        catch (Exception ex) when (ex is HostNetworkException or IOException or InvalidOperationException)
         {
             return OutboundState.Missing(outbound.Name, ex.Message);
         }
@@ -271,49 +209,7 @@ public sealed class OutboundHost : IDisposable
         return [.. States(outbounds).Where(state => state.Carries).Select(state => state.Name)];
     }
 
-    private async Task RaiseAsync(OutboundConfig outbound, CancellationToken ct)
-    {
-        var server = await ServerAsync(outbound, ct).ConfigureAwait(false);
-        var update = OutboundDevice.Update(outbound, server);
-        if (Differs(outbound.Name, update.Obfuscation))
-        {
-            await _network.RemoveLinkAsync(outbound.Name, ct).ConfigureAwait(false);
-        }
-
-        if (!_network.HasLink(outbound.Name))
-        {
-            await _network.AddLinkAsync(outbound.Name, ct).ConfigureAwait(false);
-        }
-
-        _devices.Apply(update with { ReplacePeers = !Holds(outbound) });
-        await _network.AddressAsync(outbound.Name, OutboundDevice.Hosts(outbound.Address), ct).ConfigureAwait(false);
-        await _network.UpAsync(outbound.Name, outbound.Mtu, ct).ConfigureAwait(false);
-        await _network.RouteAsync(outbound.Name, outbound.Table, ct).ConfigureAwait(false);
-    }
-
-    private bool IsDown(OutboundConfig outbound) =>
-        OutboundKind.HasLink(outbound.Kind) && _network.HasLink(outbound.Name) && !_network.IsUp(outbound.Name);
-
-    private bool Holds(OutboundConfig outbound) =>
-        _devices.Find(outbound.Name)?.Peers.All(peer => peer.PublicKey == outbound.PeerKey) == true;
-
-    // Tells whether the interface carries another obfuscation.
-    private bool Differs(string name, AwgObfuscation? wanted) =>
-        _network.HasLink(name) && _devices.Find(name) is { } device && !device.Obfuscation.SameAs(wanted);
-
-    private async Task<IPEndPoint> ServerAsync(OutboundConfig outbound, CancellationToken ct)
-    {
-        if (!OutboundKind.HasProxy(outbound.Kind))
-        {
-            var address = await HostAddress.ResolveAsync(outbound.Host, ct).ConfigureAwait(false);
-
-            return new IPEndPoint(address, outbound.Port);
-        }
-
-        var carriers = _carriers
-            ?? throw new HostNetworkException($"'{outbound.Name}' asks for a websocket the panel does not carry");
-        var port = await carriers.RaiseAsync(outbound, ct).ConfigureAwait(false);
-
-        return new IPEndPoint(IPAddress.Loopback, port);
-    }
+    private IOutboundDriver Driver(OutboundConfig outbound) =>
+        _drivers.FirstOrDefault(driver => driver.Supports(outbound.Kind))
+        ?? throw new InvalidOperationException($"no driver carries the outbound kind '{outbound.Kind}'");
 }

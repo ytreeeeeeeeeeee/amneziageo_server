@@ -14,12 +14,15 @@ public class OutboundHostTests
     {
         var ledger = new Ledger();
         var kernel = new Kernel();
-        var host = new OutboundHost(ledger, kernel, new Clock(Now));
+        var host = Host(ledger, kernel);
 
         await host.ApplyAsync(Tunnel(), CancellationToken.None);
 
         Assert.Equal(
-            ["seal", "add awgbor", "address awgbor 10.8.1.5/32", "up awgbor 1380", "route awgbor 42601", "rule 42497 42601 10000 True"],
+            [
+                "seal", "add awgbor", "address awgbor 10.8.1.5/32", "up awgbor 1380", "route awgbor 42601",
+                "rule 42497 42601 10000 True"
+            ],
             ledger.Steps);
         Assert.Equal("awgbor", Assert.Single(kernel.Updates).Name);
     }
@@ -28,7 +31,7 @@ public class OutboundHostTests
     public async Task ATunnelTakesItsAddressAloneWhateverTheMaskItCameWith()
     {
         var ledger = new Ledger();
-        var host = new OutboundHost(ledger, new Kernel(), new Clock(Now));
+        var host = Host(ledger, new Kernel());
 
         await host.ApplyAsync(Tunnel() with { Address = ["10.9.0.2/24", "fd00::2/64"] }, CancellationToken.None);
 
@@ -40,7 +43,7 @@ public class OutboundHostTests
     {
         var ledger = new Ledger();
         ledger.Links.Add("awgbor");
-        var host = new OutboundHost(ledger, new Kernel(), new Clock(Now));
+        var host = Host(ledger, new Kernel());
 
         await host.ApplyAsync(Tunnel(), CancellationToken.None);
 
@@ -53,7 +56,7 @@ public class OutboundHostTests
     {
         var ledger = new Ledger();
         ledger.Links.Add("awgbor");
-        var host = new OutboundHost(ledger, new Kernel(), new Clock(Now));
+        var host = Host(ledger, new Kernel());
 
         var state = await host.ApplyAsync(Tunnel() with { IsEnabled = false }, CancellationToken.None);
 
@@ -66,7 +69,7 @@ public class OutboundHostTests
     {
         var ledger = new Ledger();
         ledger.Links.Add("awgbor");
-        var host = new OutboundHost(ledger, new Kernel(), new Clock(Now));
+        var host = Host(ledger, new Kernel());
 
         await host.WithdrawAsync(Tunnel(), CancellationToken.None);
 
@@ -80,12 +83,18 @@ public class OutboundHostTests
         kernel.Hold(new AwgDevice
         {
             Name = "awgbor",
-            Peers = [new AwgPeer { PublicKey = "eOWG0GXBLrpZOZ+FCwCJTvZ5rBEKHZ8NPvxNM3nJPl4=", LastHandshake = Now.AddMinutes(-1) }],
+            Peers =
+            [
+                new AwgPeer
+                {
+                    PublicKey = "eOWG0GXBLrpZOZ+FCwCJTvZ5rBEKHZ8NPvxNM3nJPl4=", LastHandshake = Now.AddMinutes(-1)
+                }
+            ],
         });
         var ledger = new Ledger();
         ledger.Links.Add("awgbor");
         ledger.Down.Add("awgbor");
-        var host = new OutboundHost(ledger, kernel, new Clock(Now));
+        var host = Host(ledger, kernel);
 
         var state = host.State(Tunnel());
 
@@ -101,7 +110,7 @@ public class OutboundHostTests
         var ledger = new Ledger();
         ledger.Links.Add("awgbor");
         ledger.Down.Add("awgbor");
-        var host = new OutboundHost(ledger, new Kernel(), new Clock(Now));
+        var host = Host(ledger, new Kernel());
 
         var mended = await host.MendAsync(Tunnel(), CancellationToken.None);
 
@@ -119,8 +128,8 @@ public class OutboundHostTests
         off.Links.Add("awgbor");
         off.Down.Add("awgbor");
 
-        var upMended = await new OutboundHost(up, new Kernel(), new Clock(Now)).MendAsync(Tunnel(), CancellationToken.None);
-        var offMended = await new OutboundHost(off, new Kernel(), new Clock(Now))
+        var upMended = await Host(up, new Kernel()).MendAsync(Tunnel(), CancellationToken.None);
+        var offMended = await Host(off, new Kernel())
             .MendAsync(Tunnel() with { IsEnabled = false }, CancellationToken.None);
 
         Assert.False(upMended || offMended);
@@ -132,7 +141,7 @@ public class OutboundHostTests
     {
         var ledger = new Ledger();
         var kernel = new Kernel();
-        var host = new OutboundHost(ledger, kernel, new Clock(Now));
+        var host = Host(ledger, kernel);
 
         var mended = await host.MendAsync(Tunnel(), CancellationToken.None);
 
@@ -148,7 +157,7 @@ public class OutboundHostTests
     public async Task ARuleTheHostLostIsLaidAgainAndSoIsTheSeal()
     {
         var ledger = new Ledger();
-        var host = new OutboundHost(ledger, new Kernel(), new Clock(Now));
+        var host = Host(ledger, new Kernel());
         await host.ApplyAsync(Tunnel(), CancellationToken.None);
         var held = await host.KeepRuleAsync(Tunnel(), CancellationToken.None);
         var kept = await host.KeepSealAsync(CancellationToken.None);
@@ -171,7 +180,7 @@ public class OutboundHostTests
     public async Task ARuleThePanelDidNotLayIsLeftToTheOneWhoDoes()
     {
         var ledger = new Ledger();
-        var host = new OutboundHost(ledger, new Kernel(), new Clock(Now));
+        var host = Host(ledger, new Kernel());
 
         var early = await host.KeepRuleAsync(Tunnel(), CancellationToken.None);
         var open = await host.KeepSealAsync(CancellationToken.None);
@@ -190,7 +199,7 @@ public class OutboundHostTests
     {
         var ledger = new Ledger();
 
-        var mended = await new OutboundHost(ledger, new Kernel(), new Clock(Now))
+        var mended = await Host(ledger, new Kernel())
             .MendAsync(Tunnel() with { Kind = OutboundKind.Local }, CancellationToken.None);
 
         Assert.False(mended);
@@ -201,9 +210,9 @@ public class OutboundHostTests
     public async Task AnOutboundThroughTheHostItselfOnlyTakesTheRule()
     {
         var ledger = new Ledger();
-        var host = new OutboundHost(ledger, new Kernel(), new Clock(Now));
+        var host = Host(ledger, new Kernel());
 
-        var state = await host.ApplyAsync(OutboundDefaults.Direct(), CancellationToken.None);
+        var state = await host.ApplyAsync(LocalOutboundDefaults.Direct(), CancellationToken.None);
 
         Assert.Equal(["seal", "rule 42497 254 10000 True"], ledger.Steps);
         Assert.True(state.IsAlive);
@@ -213,7 +222,7 @@ public class OutboundHostTests
     public async Task AHostThatRefusesAStepLeavesTheReasonOnTheOutbound()
     {
         var ledger = new Ledger { Refuses = "route" };
-        var host = new OutboundHost(ledger, new Kernel(), new Clock(Now));
+        var host = Host(ledger, new Kernel());
 
         var state = await host.ApplyAsync(Tunnel(), CancellationToken.None);
 
@@ -225,9 +234,9 @@ public class OutboundHostTests
     public async Task PuttingEveryOutboundOnTheHostEndsWithTheFirewall()
     {
         var ledger = new Ledger();
-        var host = new OutboundHost(ledger, new Kernel(), new Clock(Now));
+        var host = Host(ledger, new Kernel());
 
-        var states = await host.SyncAsync([OutboundDefaults.Direct(), Tunnel()], CancellationToken.None);
+        var states = await host.SyncAsync([LocalOutboundDefaults.Direct(), Tunnel()], CancellationToken.None);
 
         Assert.Equal(2, states.Count);
         Assert.Equal("firewall", ledger.Steps[^1]);
@@ -255,13 +264,13 @@ public class OutboundHostTests
         });
         var ledger = new Ledger();
         ledger.Links.Add("awgbor");
-        var host = new OutboundHost(ledger, kernel, new Clock(Now));
+        var host = Host(ledger, kernel);
 
         var state = host.State(Tunnel());
 
         Assert.True(state.HasLink);
         Assert.True(state.IsAlive);
-        Assert.Equal("46.8.237.222:51821", state.Endpoint);
+        Assert.Equal("46.8.237.222:51821", Assert.IsType<AwgOutboundState>(state).Endpoint);
         Assert.Equal(4096ul, state.RxBytes);
         Assert.Equal(2048ul, state.TxBytes);
     }
@@ -285,53 +294,53 @@ public class OutboundHostTests
         });
         var ledger = new Ledger();
         ledger.Links.Add("awgbor");
-        var host = new OutboundHost(ledger, kernel, new Clock(Now));
+        var host = Host(ledger, kernel);
 
-        var carrying = host.Carrying([Tunnel(), Tunnel() with { Name = "awgfar" }, OutboundDefaults.Direct()]);
+        var carrying = host.Carrying([Tunnel(), Tunnel() with { Name = "awgfar" }, LocalOutboundDefaults.Direct()]);
 
         Assert.Contains("awgbor", carrying);
-        Assert.Contains(OutboundDefaults.Direct().Name, carrying);
+        Assert.Contains(LocalOutboundDefaults.Direct().Name, carrying);
         Assert.DoesNotContain("awgfar", carrying);
     }
 
     [Fact]
     public void AnOutboundThroughTheHostCountsNoBytes()
     {
-        var host = new OutboundHost(new Ledger(), new Kernel(), new Clock(Now));
+        var host = Host(new Ledger(), new Kernel());
 
         var state = host.State(Tunnel() with { Name = "direct", Kind = OutboundKind.Local });
 
         Assert.True(state.HasLink);
         Assert.True(state.IsAlive);
-        Assert.False(state.Counted);
+        Assert.Null(state.RxBytes);
     }
 
     [Fact]
     public void ATunnelCountsItsBytes()
     {
-        var host = new OutboundHost(new Ledger(), new Kernel(), new Clock(Now));
+        var host = Host(new Ledger(), new Kernel());
 
-        Assert.True(host.State(Tunnel()).Counted);
+        Assert.NotNull(host.State(Tunnel()).RxBytes);
     }
 
     [Fact]
     public void AnInterfaceTheHostDoesNotCarryReadsAsMissing()
     {
-        var host = new OutboundHost(new Ledger(), new Kernel(), new Clock(Now));
+        var host = Host(new Ledger(), new Kernel());
 
         var state = host.State(Tunnel());
 
         Assert.False(state.HasLink);
         Assert.False(state.IsAlive);
         Assert.False(state.Carries);
-        Assert.Null(state.LastHandshake);
+        Assert.Null(Assert.IsType<AwgOutboundState>(state).LastHandshake);
         Assert.Equal("the interface 'awgbor' is gone", state.Fault);
     }
 
     [Fact]
     public void AnOutboundThatIsTurnedOffIsNotFaulted()
     {
-        var host = new OutboundHost(new Ledger(), new Kernel(), new Clock(Now));
+        var host = Host(new Ledger(), new Kernel());
 
         var state = host.State(Tunnel() with { IsEnabled = false });
 
@@ -346,7 +355,7 @@ public class OutboundHostTests
         ledger.Links.Add("awgbor");
         var kernel = new Kernel();
         kernel.Hold(new AwgDevice { Name = "awgbor", Peers = [new AwgPeer { PublicKey = Tunnel().PeerKey }] });
-        var host = new OutboundHost(ledger, kernel, new Clock(Now));
+        var host = Host(ledger, kernel);
 
         await host.ApplyAsync(Tunnel(), CancellationToken.None);
 
@@ -362,9 +371,13 @@ public class OutboundHostTests
         kernel.Hold(new AwgDevice
         {
             Name = "awgbor",
-            Peers = [new AwgPeer { PublicKey = Tunnel().PeerKey }, new AwgPeer { PublicKey = "IVOnjpSCrj9ctUFhwHTlp9GJo0ixYj8f+4KFqzt9n2Q=" }],
+            Peers =
+            [
+                new AwgPeer { PublicKey = Tunnel().PeerKey },
+                new AwgPeer { PublicKey = "IVOnjpSCrj9ctUFhwHTlp9GJo0ixYj8f+4KFqzt9n2Q=" }
+            ],
         });
-        var host = new OutboundHost(ledger, kernel, new Clock(Now));
+        var host = Host(ledger, kernel);
 
         await host.ApplyAsync(Tunnel(), CancellationToken.None);
 
@@ -389,7 +402,7 @@ public class OutboundHostTests
             },
             Peers = [new AwgPeer { PublicKey = "IVOnjpSCrj9ctUFhwHTlp9GJo0ixYj8f+4KFqzt9n2Q=" }],
         });
-        var host = new OutboundHost(ledger, kernel, new Clock(Now));
+        var host = Host(ledger, kernel);
 
         await host.ApplyAsync(Profiled(), CancellationToken.None);
 
@@ -414,7 +427,7 @@ public class OutboundHostTests
             Obfuscation = ConfigDevice.Obfuscation(Profiled().Obfuscation),
             Peers = [new AwgPeer { PublicKey = Profiled().PeerKey }],
         });
-        var host = new OutboundHost(ledger, kernel, new Clock(Now));
+        var host = Host(ledger, kernel);
 
         await host.ApplyAsync(Profiled(), CancellationToken.None);
 
@@ -426,7 +439,7 @@ public class OutboundHostTests
     [Fact]
     public async Task ASecondHoldOfTheOutboundsWaitsUntilTheFirstIsLetGo()
     {
-        var host = new OutboundHost(new Ledger(), new Kernel(), new Clock(Now));
+        var host = Host(new Ledger(), new Kernel());
 
         var first = await host.HoldAsync(CancellationToken.None);
         var second = host.HoldAsync(CancellationToken.None);
@@ -438,7 +451,10 @@ public class OutboundHostTests
         Assert.True(waited);
     }
 
-    private static OutboundConfig Profiled() => Tunnel() with
+    private static OutboundHost Host(IHostNetwork network, IAwgDevices devices) =>
+        new(network, [new LocalOutboundDriver(), new AwgOutboundDriver(network, devices, new Clock(Now))]);
+
+    private static AwgOutboundConfig Profiled() => Tunnel() with
     {
         Obfuscation = new ObfuscationSettings
         {
@@ -454,7 +470,7 @@ public class OutboundHostTests
         },
     };
 
-    private static OutboundConfig Tunnel() => new()
+    private static AwgOutboundConfig Tunnel() => new AwgOutboundConfig()
     {
         Name = "awgbor",
         Kind = OutboundKind.Wg,

@@ -25,8 +25,8 @@ public class RouteProbeTests
 
     private static readonly OutboundConfig[] Ways =
     [
-        new() { Name = "awgbor", Kind = OutboundKind.Wg, Mark = 0xA602, Table = 42602 },
-        new() { Name = "awgoff", Kind = OutboundKind.Wg, Mark = 0xA603, Table = 42603, IsEnabled = false },
+        new AwgOutboundConfig() { Name = "awgbor", Kind = OutboundKind.Wg, Mark = 0xA602, Table = 42602 },
+        new AwgOutboundConfig() { Name = "awgoff", Kind = OutboundKind.Wg, Mark = 0xA603, Table = 42603, IsEnabled = false },
     ];
 
     [Fact]

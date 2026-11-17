@@ -13,7 +13,7 @@ public class DnsRelayTests
 {
     private static readonly OutboundConfig[] Ways =
     [
-        new() { Name = "direct", Kind = OutboundKind.Local, Mark = 0xA601, Table = OutboundRules.MainTable },
+        new LocalOutboundConfig { Name = "direct", Kind = OutboundKind.Local, Mark = 0xA601, Table = OutboundRules.MainTable },
     ];
 
     private static readonly DnsSettings On = DnsDefaults.Settings with { IsEnabled = true };

@@ -21,9 +21,9 @@ public class AccessTests
 
     private static readonly OutboundConfig[] Ways =
     [
-        new() { Name = "direct", Kind = OutboundKind.Local, Mark = 0xA601, Table = OutboundRules.MainTable },
-        new() { Name = "awgbor", Kind = OutboundKind.Wg, Mark = 0xA602, Table = 42602 },
-        new() { Name = "awgoff", Kind = OutboundKind.Wg, Mark = 0xA603, Table = 42603, IsEnabled = false },
+        new LocalOutboundConfig { Name = "direct", Kind = OutboundKind.Local, Mark = 0xA601, Table = OutboundRules.MainTable },
+        new AwgOutboundConfig() { Name = "awgbor", Kind = OutboundKind.Wg, Mark = 0xA602, Table = 42602 },
+        new AwgOutboundConfig() { Name = "awgoff", Kind = OutboundKind.Wg, Mark = 0xA603, Table = 42603, IsEnabled = false },
     ];
 
     private static readonly DnsSettings Resolver = DnsDefaults.Settings with { IsEnabled = true, Upstreams = ["1.1.1.1"] };

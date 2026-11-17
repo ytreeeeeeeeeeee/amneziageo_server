@@ -5,9 +5,9 @@ using AmneziaGeo.Server.Awg.Device;
 namespace AmneziaGeo.Server.Routing.Outbound;
 
 /// <summary>
-/// Turns the settings of an outbound into a change for the kernel.
+/// Turns AmneziaWG outbound settings into a change for the kernel.
 /// </summary>
-public static class OutboundDevice
+public static class AwgOutboundDevice
 {
     /// <summary>
     /// The ranges the tunnel takes from the host.
@@ -17,9 +17,10 @@ public static class OutboundDevice
     /// <summary>
     /// Returns the change that puts the settings of an outbound on its interface, dropping the peers it held when told to.
     /// </summary>
-    public static AwgUpdate Update(OutboundConfig outbound, IPEndPoint server, bool replacePeers = true)
+    public static AwgUpdate Update(AwgOutboundConfig outbound, IPEndPoint server, bool replacePeers = true)
     {
         ArgumentNullException.ThrowIfNull(outbound);
+
         ArgumentNullException.ThrowIfNull(server);
 
         return new AwgUpdate
@@ -27,7 +28,7 @@ public static class OutboundDevice
             Name = outbound.Name,
             PrivateKey = outbound.PrivateKey,
             ReplacePeers = replacePeers,
-            Obfuscation = OutboundRules.IsPlain(outbound.Obfuscation)
+            Obfuscation = AwgOutboundRules.IsPlain(outbound.Obfuscation)
                 ? null
                 : ConfigDevice.Obfuscation(outbound.Obfuscation),
             Peers = [Peer(outbound, server)],
@@ -37,9 +38,10 @@ public static class OutboundDevice
     /// <summary>
     /// Returns the server of an outbound as a peer of its interface.
     /// </summary>
-    public static AwgPeerUpdate Peer(OutboundConfig outbound, IPEndPoint server)
+    public static AwgPeerUpdate Peer(AwgOutboundConfig outbound, IPEndPoint server)
     {
         ArgumentNullException.ThrowIfNull(outbound);
+
         ArgumentNullException.ThrowIfNull(server);
 
         return new AwgPeerUpdate
@@ -72,18 +74,19 @@ public static class OutboundDevice
     /// <summary>
     /// Returns what the host holds for an outbound, reading it off the interface.
     /// </summary>
-    public static OutboundState State(OutboundConfig outbound, AwgDevice? device, DateTimeOffset now)
+    public static OutboundState State(AwgOutboundConfig outbound, AwgDevice? device, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(outbound);
 
         if (device is null)
         {
-            return OutboundState.Missing(outbound.Name);
+            return new AwgOutboundState(outbound.Name, false, string.Empty, null, 0, 0, false, string.Empty);
         }
 
-        var peer = device.Peers.FirstOrDefault(one => one.PublicKey == outbound.PeerKey) ?? device.Peers.FirstOrDefault();
+        var peer = device.Peers.FirstOrDefault(one => one.PublicKey == outbound.PeerKey) ??
+                   device.Peers.FirstOrDefault();
 
-        return new OutboundState(
+        return new AwgOutboundState(
             outbound.Name,
             true,
             peer?.Endpoint?.ToString() ?? string.Empty,
@@ -98,5 +101,5 @@ public static class OutboundDevice
     /// Tells whether a handshake is recent enough for the tunnel to carry traffic.
     /// </summary>
     public static bool Alive(DateTimeOffset? handshake, DateTimeOffset now) =>
-        handshake is { } stamp && now - stamp < OutboundState.AliveFor;
+        handshake is { } stamp && now - stamp < AwgOutboundState.AliveFor;
 }

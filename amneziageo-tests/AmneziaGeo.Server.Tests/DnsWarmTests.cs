@@ -11,8 +11,8 @@ public class DnsWarmTests
 {
     private static readonly OutboundConfig[] Ways =
     [
-        new() { Name = "direct", Kind = OutboundKind.Local, Mark = 0xA601, Table = OutboundRules.MainTable },
-        new() { Name = "off", Kind = OutboundKind.Wg, Mark = 0xA603, Table = 42603, IsEnabled = false },
+        new LocalOutboundConfig { Name = "direct", Kind = OutboundKind.Local, Mark = 0xA601, Table = OutboundRules.MainTable },
+        new AwgOutboundConfig() { Name = "off", Kind = OutboundKind.Wg, Mark = 0xA603, Table = 42603, IsEnabled = false },
     ];
 
     [Fact]

@@ -1,8 +1,6 @@
 using System.Net.Sockets;
-
 using AmneziaGeo.Server.Api.Configs;
 using AmneziaGeo.Server.Api.Rules;
-using AmneziaGeo.Server.Awg.Netlink;
 using AmneziaGeo.Server.Dal;
 using AmneziaGeo.Server.Routing.Balance;
 using AmneziaGeo.Server.Routing.Host;
@@ -19,31 +17,18 @@ namespace AmneziaGeo.Server.Api.Outbounds;
 public sealed class ProbeWatch : BackgroundService
 {
     private readonly IServiceScopeFactory _scopes;
-
     private readonly ProbeRunner _runner;
-
     private readonly ProbeLive _live;
-
     private readonly OutboundHost _host;
-
     private readonly BalanceLive _carrying;
-
     private readonly ConfigWatch _endpoints;
-
     private readonly DatabaseVersion _version;
-
     private readonly HostChanges _changes;
-
     private readonly TimeProvider _time;
-
     private readonly ILogger<ProbeWatch> _logger;
-
     private readonly Dictionary<string, DateTimeOffset> _resting = new(StringComparer.Ordinal);
-
     private IReadOnlyList<OutboundConfig> _outbounds = [];
-
     private long? _seen;
-
     private DateTimeOffset? _rulesAgain;
 
     /// <summary>
@@ -152,7 +137,8 @@ public sealed class ProbeWatch : BackgroundService
     }
 
     // Lays again the interfaces the host lost, an interface it refused within the wait only when the outbounds changed.
-    private async Task<bool> MendAsync(IReadOnlyList<OutboundConfig> outbounds, bool fresh, DateTimeOffset now, CancellationToken ct)
+    private async Task<bool> MendAsync(IReadOnlyList<OutboundConfig> outbounds, bool fresh, DateTimeOffset now,
+        CancellationToken ct)
     {
         var mended = false;
         foreach (var outbound in outbounds)
@@ -182,7 +168,7 @@ public sealed class ProbeWatch : BackgroundService
                     _logger.LogWarning("the interface of '{Outbound}' was down and is up again", outbound.Name);
                 }
             }
-            catch (Exception ex) when (ex is HostNetworkException or NetlinkException or SocketException)
+            catch (Exception ex) when (ex is HostNetworkException or SocketException)
             {
                 _resting[outbound.Name] = now + ConfigWatch.Retry;
                 _logger.LogWarning(ex, "the interface of '{Outbound}' did not come up", outbound.Name);
@@ -212,7 +198,7 @@ public sealed class ProbeWatch : BackgroundService
 
             _rulesAgain = null;
         }
-        catch (Exception ex) when (ex is HostNetworkException or NetlinkException or SocketException)
+        catch (Exception ex) when (ex is HostNetworkException or SocketException)
         {
             _rulesAgain = now + ConfigWatch.Retry;
             _logger.LogWarning(ex, "the rules of the outbounds were not laid again");

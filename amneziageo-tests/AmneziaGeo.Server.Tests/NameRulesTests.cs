@@ -29,8 +29,8 @@ public class NameRulesTests
 
     private static readonly OutboundConfig[] Ways =
     [
-        new() { Name = "direct", Kind = OutboundKind.Local, Mark = 0xA601, Table = OutboundRules.MainTable },
-        new() { Name = "far", Kind = OutboundKind.Wg, Mark = 0xA602, Table = 42602 },
+        new LocalOutboundConfig { Name = "direct", Kind = OutboundKind.Local, Mark = 0xA601, Table = OutboundRules.MainTable },
+        new AwgOutboundConfig() { Name = "far", Kind = OutboundKind.Wg, Mark = 0xA602, Table = 42602 },
     ];
 
     private static readonly RouteReading Both = new(NameDefaults.Queue, NameDefaults.Port);

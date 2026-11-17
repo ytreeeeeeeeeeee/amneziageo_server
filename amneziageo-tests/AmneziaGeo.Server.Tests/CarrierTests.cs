@@ -33,9 +33,11 @@ public class CarrierTests
     [Fact]
     public void AnUpgradeProvesTheKeysUnlessTheProxyTakesCredentials()
     {
-        var plain = WsCarrier.Handshake(WsEndpoint.Parse("proxy.example.net", 443, "46.8.237.222"), 51820, "key", "AmneziaGeo token");
+        var plain = WsCarrier.Handshake(WsEndpoint.Parse("proxy.example.net", 443, "46.8.237.222"), 51820, "key",
+            "AmneziaGeo token");
         var basic = WsCarrier.Handshake(
-            WsEndpoint.Parse("wss://user:secret@proxy.example.net:8443/path", 443, "46.8.237.222"), 51820, "key", "AmneziaGeo token");
+            WsEndpoint.Parse("wss://user:secret@proxy.example.net:8443/path", 443, "46.8.237.222"), 51820, "key",
+            "AmneziaGeo token");
         var bare = WsCarrier.Handshake(WsEndpoint.Parse("proxy.example.net", 443, "46.8.237.222"), 51820, "key", null);
 
         Assert.StartsWith("GET /v1/events HTTP/1.1\r\n", plain, StringComparison.Ordinal);
@@ -57,8 +59,8 @@ public class CarrierTests
     [Fact]
     public void AWebsocketOutboundCarriesAnInterfaceAndAProxy()
     {
-        Assert.True(OutboundKind.Known(OutboundKind.Ws));
-        Assert.True(OutboundKind.HasLink(OutboundKind.Ws));
+        Assert.True(OutboundKind.IsAwg(OutboundKind.Ws));
+        Assert.True(new AwgOutboundConfig { Name = "ws", Kind = OutboundKind.Ws }.UsesInterface);
         Assert.True(OutboundKind.HasProxy(OutboundKind.Ws));
         Assert.False(OutboundKind.HasProxy(OutboundKind.Wg));
     }
@@ -88,7 +90,14 @@ public class CarrierTests
     [Fact]
     public void AProxyOnTheHostItselfIsRefused()
     {
-        var direct = OutboundDefaults.Direct() with { Proxy = "wss://proxy.example.net" };
+        var direct = new AwgOutboundConfig
+        {
+            Name = LocalOutboundDefaults.DirectName,
+            Kind = OutboundKind.Local,
+            Mark = OutboundRules.FirstMark,
+            Table = OutboundRules.FirstTable,
+            Proxy = "wss://proxy.example.net",
+        };
 
         Assert.Equal("bad-kind", OutboundRules.Check(direct)?.Code);
     }
@@ -104,8 +113,8 @@ public class CarrierTests
     [Fact]
     public void AFreshOutboundTakesTheKindItIsAskedFor()
     {
-        Assert.Equal(OutboundKind.Ws, OutboundDefaults.Fresh("out1", OutboundKind.Ws).Kind);
-        Assert.Equal(OutboundKind.Wg, OutboundDefaults.Fresh("out1", "nonsense").Kind);
+        Assert.Equal(OutboundKind.Ws, AwgOutboundDefaults.Fresh("out1", OutboundKind.Ws).Kind);
+        Assert.Equal(OutboundKind.Wg, AwgOutboundDefaults.Fresh("out1", "nonsense").Kind);
     }
 
     [Fact]
@@ -135,7 +144,8 @@ public class CarrierTests
         using var carriers = new CarrierHost();
 
         var first = await carriers.RaiseAsync(Carried(), CancellationToken.None);
-        var moved = await carriers.RaiseAsync(Carried() with { Proxy = "wss://127.0.0.2:8443/token" }, CancellationToken.None);
+        var moved = await carriers.RaiseAsync(Carried() with { Proxy = "wss://127.0.0.2:8443/token" },
+            CancellationToken.None);
 
         Assert.NotEqual(first, moved);
         Assert.Equal(moved, carriers.PortOf("awgws"));
@@ -158,7 +168,7 @@ public class CarrierTests
         var ledger = new Ledger();
         var kernel = new Kernel();
         using var carriers = new CarrierHost();
-        var host = new OutboundHost(ledger, kernel, new Clock(Now), carriers);
+        var host = new OutboundHost(ledger, [new AwgOutboundDriver(ledger, kernel, new Clock(Now), carriers)]);
 
         await host.ApplyAsync(Carried(), CancellationToken.None);
 
@@ -173,7 +183,7 @@ public class CarrierTests
         var ledger = new Ledger();
         ledger.Links.Add("awgws");
         using var carriers = new CarrierHost();
-        var host = new OutboundHost(ledger, new Kernel(), new Clock(Now), carriers);
+        var host = new OutboundHost(ledger, [new AwgOutboundDriver(ledger, new Kernel(), new Clock(Now), carriers)]);
         await host.ApplyAsync(Carried(), CancellationToken.None);
 
         await host.ApplyAsync(Carried() with { IsEnabled = false }, CancellationToken.None);
@@ -184,7 +194,8 @@ public class CarrierTests
     [Fact]
     public async Task AWebsocketOutboundWithoutCarriersSaysSo()
     {
-        var host = new OutboundHost(new Ledger(), new Kernel(), new Clock(Now));
+        var ledger = new Ledger();
+        var host = new OutboundHost(ledger, [new AwgOutboundDriver(ledger, new Kernel(), new Clock(Now))]);
 
         var state = await host.ApplyAsync(Carried(), CancellationToken.None);
 
@@ -192,7 +203,7 @@ public class CarrierTests
         Assert.Contains("websocket", state.Fault, StringComparison.Ordinal);
     }
 
-    private static OutboundConfig Carried() => new()
+    private static AwgOutboundConfig Carried() => new AwgOutboundConfig()
     {
         Name = "awgws",
         Kind = OutboundKind.Ws,

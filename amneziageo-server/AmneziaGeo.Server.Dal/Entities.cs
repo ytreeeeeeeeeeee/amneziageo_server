@@ -1,4 +1,6 @@
 using AmneziaGeo.Server.Auth;
+using AmneziaGeo.Server.Core.Crypto;
+using AmneziaGeo.Server.Routing.Outbound;
 
 namespace AmneziaGeo.Server.Dal;
 
@@ -366,9 +368,9 @@ public sealed class GeoSourceEntity
 }
 
 /// <summary>
-/// One way out of the host the panel holds.
+/// Only the identity, routing and probe settings shared by every way out.
 /// </summary>
-public sealed class OutboundEntity
+public abstract class OutboundEntity
 {
     public long Id { get; set; }
 
@@ -380,6 +382,100 @@ public sealed class OutboundEntity
 
     public bool IsEnabled { get; set; }
 
+    public string Dns { get; set; } = string.Empty;
+
+    public string Probe { get; set; } = string.Empty;
+
+    public int ProbeEvery { get; set; }
+
+    public bool ClosePrivate { get; set; }
+
+    public long Mark { get; set; }
+
+    public int Table { get; set; }
+
+    public DateTimeOffset CreatedUtc { get; set; }
+
+    public DateTimeOffset UpdatedUtc { get; set; }
+
+    /// <summary>
+    /// Returns the settings specific to the kind of outbound the row holds.
+    /// </summary>
+    protected abstract OutboundConfig Settings();
+
+    /// <summary>
+    /// Reads the outbound the row holds, including its common settings.
+    /// </summary>
+    public OutboundConfig ToConfig() => Settings() with
+    {
+        Id = Id,
+        Name = Name,
+        Kind = Kind,
+        Position = Position,
+        IsEnabled = IsEnabled,
+        Dns = Parts(Dns),
+        Probe = Probe,
+        ProbeEvery = ProbeEvery,
+        ClosePrivate = ClosePrivate,
+        Mark = (uint)Mark,
+        Table = Table,
+        CreatedUtc = CreatedUtc,
+        UpdatedUtc = UpdatedUtc,
+    };
+
+    /// <summary>
+    /// Puts the common settings of an outbound into the row.
+    /// </summary>
+    public virtual void Update(OutboundConfig outbound)
+    {
+        Name = outbound.Name;
+        Kind = outbound.Kind;
+        Position = outbound.Position;
+        IsEnabled = outbound.IsEnabled;
+        Dns = string.Join(", ", outbound.Dns);
+        Probe = outbound.Probe.Trim();
+        ProbeEvery = outbound.ProbeEvery;
+        ClosePrivate = outbound.ClosePrivate;
+        Mark = outbound.Mark;
+        Table = outbound.Table;
+    }
+
+    /// <summary>
+    /// Reads the addresses held together in a row.
+    /// </summary>
+    protected static string[] Parts(string text) =>
+        text.Split([',', ' ', '\t', '\n', '\r'],
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+}
+
+/// <summary>
+/// One way out through the host itself, as the database holds it.
+/// </summary>
+public sealed class LocalOutboundEntity : OutboundEntity
+{
+    /// <inheritdoc/>
+    protected override OutboundConfig Settings() => new LocalOutboundConfig
+    {
+        Name = Name,
+    };
+
+    /// <inheritdoc/>
+    public override void Update(OutboundConfig outbound)
+    {
+        if (outbound is not LocalOutboundConfig)
+        {
+            throw new InvalidOperationException("the local row requires local settings");
+        }
+
+        base.Update(outbound);
+    }
+}
+
+/// <summary>
+/// AmneziaWG-only settings, stored separately from the common outbound row.
+/// </summary>
+public sealed class AwgOutboundEntity : OutboundEntity, IObfuscated
+{
     public string Host { get; set; } = string.Empty;
 
     public int Port { get; set; }
@@ -396,21 +492,9 @@ public sealed class OutboundEntity
 
     public string Address { get; set; } = string.Empty;
 
-    public string Dns { get; set; } = string.Empty;
-
     public int Mtu { get; set; }
 
     public int Keepalive { get; set; }
-
-    public string Probe { get; set; } = string.Empty;
-
-    public int ProbeEvery { get; set; }
-
-    public bool ClosePrivate { get; set; }
-
-    public long Mark { get; set; }
-
-    public int Table { get; set; }
 
     public int Jc { get; set; }
 
@@ -462,9 +546,44 @@ public sealed class OutboundEntity
 
     public bool DisableCookies { get; set; }
 
-    public DateTimeOffset CreatedUtc { get; set; }
+    /// <inheritdoc/>
+    protected override OutboundConfig Settings() => new AwgOutboundConfig
+    {
+        Name = Name,
+        Host = Host,
+        Port = Port,
+        Proxy = Proxy,
+        PrivateKey = PrivateKey,
+        PublicKey = PublicKey,
+        PeerKey = PeerKey,
+        PresharedKey = PresharedKey,
+        Address = Parts(Address),
+        Mtu = Mtu,
+        Keepalive = Keepalive,
+        Obfuscation = Obfuscations.Of(this),
+    };
 
-    public DateTimeOffset UpdatedUtc { get; set; }
+    /// <inheritdoc/>
+    public override void Update(OutboundConfig outbound)
+    {
+        if (outbound is not AwgOutboundConfig awg)
+        {
+            throw new InvalidOperationException("the AmneziaWG row requires AmneziaWG settings");
+        }
+
+        base.Update(outbound);
+        Host = awg.Host.Trim();
+        Port = awg.Port;
+        Proxy = awg.Proxy.Trim();
+        PrivateKey = awg.PrivateKey;
+        PublicKey = PrivateKey.Length > 0 ? Curve25519.PublicOf(PrivateKey) : string.Empty;
+        PeerKey = awg.PeerKey.Trim();
+        PresharedKey = awg.PresharedKey.Trim();
+        Address = string.Join(", ", awg.Address);
+        Mtu = awg.Mtu;
+        Keepalive = awg.Keepalive;
+        Obfuscations.Write(this, awg.Obfuscation);
+    }
 }
 
 /// <summary>

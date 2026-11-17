@@ -3,6 +3,7 @@ using System;
 using AmneziaGeo.Server.Dal;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -779,85 +780,20 @@ namespace AmneziaGeo.Server.Dal.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
-                    b.Property<string>("Address")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
+                    SqlitePropertyBuilderExtensions.UseAutoincrement(b.Property<long>("Id"));
 
                     b.Property<bool>("ClosePrivate")
                         .HasColumnType("INTEGER");
 
-                    b.Property<string>("ContentPaddingAddition")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
                     b.Property<DateTimeOffset>("CreatedUtc")
                         .HasColumnType("TEXT");
-
-                    b.Property<bool>("DisableCookies")
-                        .HasColumnType("INTEGER");
 
                     b.Property<string>("Dns")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("H1")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("H2")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("H3")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("H4")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("HeaderProtectionKey")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Host")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("I1")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("I2")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("I3")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("I4")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("I5")
-                        .HasColumnType("TEXT");
-
                     b.Property<bool>("IsEnabled")
                         .HasColumnType("INTEGER");
-
-                    b.Property<int>("Jc")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("Jmax")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("Jmin")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("Keepalive")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("KeepaliveTimeout")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
 
                     b.Property<string>("Kind")
                         .IsRequired()
@@ -867,35 +803,13 @@ namespace AmneziaGeo.Server.Dal.Migrations
                     b.Property<long>("Mark")
                         .HasColumnType("INTEGER");
 
-                    b.Property<string>("MaxHandshakeAttempts")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("Mtu")
-                        .HasColumnType("INTEGER");
-
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(15)
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("PeerKey")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("Port")
-                        .HasColumnType("INTEGER");
-
                     b.Property<int>("Position")
                         .HasColumnType("INTEGER");
-
-                    b.Property<string>("PresharedKey")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("PrivateKey")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
 
                     b.Property<string>("Probe")
                         .IsRequired()
@@ -903,41 +817,6 @@ namespace AmneziaGeo.Server.Dal.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<int>("ProbeEvery")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Proxy")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("PublicKey")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool>("RandomTrailers")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("RejectAfterTime")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("RekeyAfterTime")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("RekeyTimeout")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("S1")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("S2")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("S3")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("S4")
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("Table")
@@ -957,6 +836,8 @@ namespace AmneziaGeo.Server.Dal.Migrations
                     b.HasIndex("Position");
 
                     b.ToTable("Outbounds");
+
+                    b.UseTptMappingStrategy();
                 });
 
             modelBuilder.Entity("AmneziaGeo.Server.Dal.PanelEntity", b =>
@@ -1562,6 +1443,144 @@ namespace AmneziaGeo.Server.Dal.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
+            modelBuilder.Entity("AmneziaGeo.Server.Dal.AwgOutboundEntity", b =>
+                {
+                    b.HasBaseType("AmneziaGeo.Server.Dal.OutboundEntity");
+
+                    b.Property<string>("Address")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ContentPaddingAddition")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("DisableCookies")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("H1")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("H2")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("H3")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("H4")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("HeaderProtectionKey")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Host")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("I1")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("I2")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("I3")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("I4")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("I5")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Jc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Jmax")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Jmin")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Keepalive")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("KeepaliveTimeout")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("MaxHandshakeAttempts")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Mtu")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("PeerKey")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Port")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("PresharedKey")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PrivateKey")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Proxy")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PublicKey")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("RandomTrailers")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("RejectAfterTime")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RekeyAfterTime")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RekeyTimeout")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("S1")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("S2")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("S3")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("S4")
+                        .HasColumnType("INTEGER");
+
+                    b.ToTable("AwgOutbounds", (string)null);
+                });
+
+            modelBuilder.Entity("AmneziaGeo.Server.Dal.LocalOutboundEntity", b =>
+                {
+                    b.HasBaseType("AmneziaGeo.Server.Dal.OutboundEntity");
+
+                    b.ToTable("LocalOutbounds", (string)null);
+                });
+
             modelBuilder.Entity("AmneziaGeo.Server.Dal.ClientEntity", b =>
                 {
                     b.HasOne("AmneziaGeo.Server.Dal.ConfigEntity", null)
@@ -1649,6 +1668,24 @@ namespace AmneziaGeo.Server.Dal.Migrations
                     b.HasOne("AmneziaGeo.Server.Auth.AppUser", null)
                         .WithMany()
                         .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("AmneziaGeo.Server.Dal.AwgOutboundEntity", b =>
+                {
+                    b.HasOne("AmneziaGeo.Server.Dal.OutboundEntity", null)
+                        .WithOne()
+                        .HasForeignKey("AmneziaGeo.Server.Dal.AwgOutboundEntity", "Id")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("AmneziaGeo.Server.Dal.LocalOutboundEntity", b =>
+                {
+                    b.HasOne("AmneziaGeo.Server.Dal.OutboundEntity", null)
+                        .WithOne()
+                        .HasForeignKey("AmneziaGeo.Server.Dal.LocalOutboundEntity", "Id")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

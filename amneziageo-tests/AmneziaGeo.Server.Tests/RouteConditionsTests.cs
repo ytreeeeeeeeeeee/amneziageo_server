@@ -13,7 +13,7 @@ public class RouteConditionsTests
 
     private static readonly OutboundConfig[] Ways =
     [
-        new() { Name = "awgbor", Kind = OutboundKind.Wg, Mark = 0xA602, Table = 42602 },
+        new AwgOutboundConfig() { Name = "awgbor", Kind = OutboundKind.Wg, Mark = 0xA602, Table = 42602 },
     ];
 
     private static readonly TunnelClient[] Clients =

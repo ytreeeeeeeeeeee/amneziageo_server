@@ -1,5 +1,4 @@
 using AmneziaGeo.Server.Api.Rules;
-using AmneziaGeo.Server.Awg.Netlink;
 using AmneziaGeo.Server.Dal;
 using AmneziaGeo.Server.Routing.Balance;
 using AmneziaGeo.Server.Routing.Host;
@@ -13,11 +12,8 @@ namespace AmneziaGeo.Server.Api.Outbounds;
 public sealed class OutboundBoot : BackgroundService
 {
     private readonly IServiceScopeFactory _scopes;
-
     private readonly OutboundHost _host;
-
     private readonly BalanceLive _live;
-
     private readonly ILogger<OutboundBoot> _logger;
 
     /// <summary>
@@ -46,7 +42,7 @@ public sealed class OutboundBoot : BackgroundService
             _live.Keep(_host.Carrying(outbounds));
             await services.GetRequiredService<RouteApplier>().SettleAsync(stoppingToken).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is HostNetworkException or NetlinkException or InvalidOperationException or IOException)
+        catch (Exception ex) when (ex is HostNetworkException or InvalidOperationException or IOException)
         {
             _logger.LogWarning(ex, "the outbounds and the rules stayed off the host");
         }
