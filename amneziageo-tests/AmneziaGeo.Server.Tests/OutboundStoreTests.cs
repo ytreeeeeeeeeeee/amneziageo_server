@@ -92,6 +92,24 @@ public class OutboundStoreTests
     }
 
     [Fact]
+    public async Task SavedProbeRevisionsAdvanceEvenWhenTheClockStallsOrMovesBackwards()
+    {
+        using var bench = new Bench();
+        var added = await bench.Outbounds.AddAsync(Tunnel("awgbor"), CancellationToken.None);
+        var old = added.Record!;
+        var changed = await bench.Outbounds.ChangeAsync(old.Id,
+            Tunnel(old.Name) with { Host = "another.example.net" }, CancellationToken.None);
+        Assert.True(changed.Record!.UpdatedUtc > old.UpdatedUtc);
+        bench.Clock.Now -= TimeSpan.FromHours(1);
+
+        var switched = await bench.Outbounds.SwitchAsync(old.Id, false, CancellationToken.None);
+
+        Assert.True(switched.Record!.UpdatedUtc > changed.Record.UpdatedUtc);
+        var read = await bench.Outbounds.FindAsync(old.Id, CancellationToken.None);
+        Assert.Equal(switched.Record.UpdatedUtc, read!.UpdatedUtc);
+    }
+
+    [Fact]
     public async Task AnOutboundSwapsPlacesWithItsNeighbourAndStopsAtTheEdge()
     {
         using var bench = new Bench();

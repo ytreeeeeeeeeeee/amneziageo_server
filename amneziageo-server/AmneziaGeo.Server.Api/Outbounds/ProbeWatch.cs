@@ -30,6 +30,8 @@ public sealed class ProbeWatch : BackgroundService
     private IReadOnlyList<OutboundConfig> _outbounds = [];
     private long? _seen;
     private DateTimeOffset? _rulesAgain;
+    private DateTimeOffset? _retireAgain;
+    private bool _firewallPending;
 
     /// <summary>
     /// ctor
@@ -99,16 +101,22 @@ public sealed class ProbeWatch : BackgroundService
         using var hold = await _host.HoldAsync(ct).ConfigureAwait(false);
         var version = _version.Read();
         var fresh = version is null || version != _seen;
+        var carrying = fresh ? _host.Carrying(_outbounds) : null;
+        var settingsChanged = false;
         if (fresh)
         {
-            _outbounds = await services.GetRequiredService<OutboundStore>().ListAsync(ct).ConfigureAwait(false);
+            var reloaded = await services.GetRequiredService<OutboundStore>().ListAsync(ct).ConfigureAwait(false);
+            settingsChanged = !_outbounds.Select(outbound => (outbound.Id, outbound.Mark, outbound.UpdatedUtc))
+                .SequenceEqual(reloaded.Select(outbound => (outbound.Id, outbound.Mark, outbound.UpdatedUtc)));
+            _outbounds = reloaded;
             _seen = version;
         }
 
         var outbounds = _outbounds;
-        _live.Hold(outbounds.Select(one => one.Name));
+        _live.Hold(outbounds.Select(one => one.Id));
         var now = _time.GetUtcNow();
-        if (!changed && !fresh && !_resting.Values.Any(again => again <= now) && !(_rulesAgain <= now))
+        if (!changed && !fresh && !_resting.Values.Any(again => again <= now) && !(_rulesAgain <= now)
+            && !(_retireAgain <= now))
         {
             return (outbounds, false);
         }
@@ -118,12 +126,30 @@ public sealed class ProbeWatch : BackgroundService
             Forget(outbounds);
         }
 
-        var moved = await MendAsync(outbounds, fresh, now, ct).ConfigureAwait(false);
+        carrying ??= _host.Carrying(outbounds);
+        var moved = false;
+        if (fresh || !(_retireAgain > now))
+        {
+            try
+            {
+                moved = await _host.RetireMissingAsync(outbounds, ct).ConfigureAwait(false);
+                _retireAgain = null;
+            }
+            catch (Exception ex) when (ex is HostNetworkException or SocketException)
+            {
+                _retireAgain = now + ConfigWatch.Retry;
+                _logger.LogWarning(ex, "the resources of removed outbounds could not be released");
+            }
+        }
+
+        moved |= await MendAsync(outbounds, fresh, now, ct).ConfigureAwait(false);
+        _firewallPending |= moved || settingsChanged;
         if (fresh || !(_rulesAgain > now))
         {
             await KeepRulesAsync(outbounds, now, ct).ConfigureAwait(false);
         }
 
+        moved |= !carrying.ToHashSet(StringComparer.Ordinal).SetEquals(_host.Carrying(outbounds));
         return (outbounds, moved);
     }
 
@@ -161,7 +187,7 @@ public sealed class ProbeWatch : BackgroundService
                 mended = true;
                 if (gone)
                 {
-                    _logger.LogWarning("the interface of '{Outbound}' was gone and is laid again", outbound.Name);
+                    _logger.LogWarning("the resources of '{Outbound}' were missing and are applied again", outbound.Name);
                 }
                 else
                 {
@@ -192,8 +218,15 @@ public sealed class ProbeWatch : BackgroundService
             {
                 if (await _host.KeepRuleAsync(outbound, ct).ConfigureAwait(false))
                 {
-                    _logger.LogWarning("the rule of '{Outbound}' was gone and is laid again", outbound.Name);
+                    _logger.LogWarning("the policy rule of '{Outbound}' was missing or differed and is applied again",
+                        outbound.Name);
                 }
+            }
+
+            if (_firewallPending)
+            {
+                await _host.FirewallAsync(outbounds, ct).ConfigureAwait(false);
+                _firewallPending = false;
             }
 
             _rulesAgain = null;
@@ -201,7 +234,7 @@ public sealed class ProbeWatch : BackgroundService
         catch (Exception ex) when (ex is HostNetworkException or SocketException)
         {
             _rulesAgain = now + ConfigWatch.Retry;
-            _logger.LogWarning(ex, "the rules of the outbounds were not laid again");
+            _logger.LogWarning(ex, "the routing rules or firewall of the outbounds were not applied again");
         }
     }
 

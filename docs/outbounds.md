@@ -121,6 +121,10 @@ carrying traffic, a rule that holds keeps its traffic and a balancer moves to an
 connection broke this way gets `network unreachable`, and a packet of a connection the host no longer tracks
 is dropped rather than sent on under the address of the client, see [rules.md](rules.md).
 
+Policy rules are checked separately for IPv4 and IPv6, including the table, action and full mark mask.
+A rule at the outbound's priority with its mark but different settings is removed before the correct one
+is installed. A failed removal or installation is reported and the next attempt checks both families again.
+
 A network manager that starts over drops the rules it did not lay itself: systemd-networkd does, under
 `ManageForeignRoutingPolicyRules=yes`, its default, whenever it is restarted. The watch that probes the
 outbounds looks at both rules whenever the kernel tells of a change of the routing rules or the interfaces of the
@@ -157,6 +161,15 @@ address of the tunnel.
 ## Putting it on the host
 
 `OutboundConfig` is the abstract contract for identity, routing, DNS and probe settings.
+`Name` is the identity used by rules, balancers and the resolver. `InterfaceName` is the network device
+used by the shared firewall, or an empty string for the host's uplink; `UsesInterface` is derived from it.
+AWG explicitly keeps `InterfaceName == Name`, preserving its existing settings and database format.
+Another implementation can name its outbound `exit-ams` and use `tt-ams` without changing AWG or adding
+an interface field to the common API. `OwnsInterface` declares whether the driver creates and removes the
+device: AWG owns its interfaces, while an external-interface implementation does not. Two external outbounds
+may share a device; a device held by an owning driver cannot be taken over by another outbound.
+Interface cleanup remains the driver's responsibility;
+this contract alone does not register an existing interface as an outbound.
 `LocalOutboundConfig` describes the way out through the host itself; `AwgOutboundConfig` derives from the same contract and adds the server, keys, interface addresses, MTU, keepalive, obfuscation and websocket proxy.
 `OutboundEntity`, `OutboundRequest`, `OutboundResponse` and `OutboundState` contain only common fields.
 Their AWG counterparts own the protocol fields, including the peer endpoint and handshake diagnostics.
@@ -186,6 +199,24 @@ rules, the refusal rule and the firewall shared, and combines each driver's stat
 `ProbeLive`. `ProbeRunner` and `IProbeLink` probe every kind under its outbound mark independently of the
 driver. Drivers are registered in `OutboundServices`; adding a kind also requires its settings to be
 accepted by outbound validation and represented in the API and panel.
+
+Probe readings are cached by outbound ID and belong to the saved configuration revision, kind, interface,
+mark, table and probe server they checked. Renaming an outbound or assigning its former name to another
+outbound cannot mix their readings. Disabling a probe immediately stops using its previous verdict. A changed
+revision starts a fresh failure count, and a late answer from an older revision cannot replace the newer verdict.
+
+The database holds the desired configuration. The host separately records the resources it may hold and
+the outcome of the last operation for each outbound ID and mark. A failed initial Apply, reconfiguration,
+switch-off or interrupted operation stays unavailable until Apply or the background watch completes it.
+A saved revision is not reported as applied merely because an older revision still has a live interface.
+Cleanup is retried even after the database row is removed, and a second edit also cleans a partially applied
+replacement. Firewall protection for retained resources remains until cleanup succeeds, even when the
+desired outbound is disabled or removed. Names, marks and managed interfaces remain reserved by their
+resource owner during cleanup; API create and edit requests that conflict are refused before writing the
+database. Host operations also check ownership, so an unapplied conflicting configuration cannot delete
+another outbound's interface. This resource ownership is kept in memory: a process
+crash can leave an unused old interface to be removed separately, while startup still reconciles policy
+rules against the saved configuration.
 
 Adding, changing, turning on and off, and removing an outbound each put it on the host straight away.
 Renaming an outbound writes the new name into the rules and the balancers that name it and into the settings of

@@ -68,7 +68,7 @@ public static class OutboundRuleset
 
         foreach (var outbound in outbounds.Where(one => one.IsEnabled && one.ClosePrivate && one.UsesInterface))
         {
-            Close(text, outbound.Name);
+            Close(text, outbound.InterfaceName);
         }
 
         Answers(text, tunnels);
@@ -88,7 +88,7 @@ public static class OutboundRuleset
         [
             .. outbounds
                 .Where(one => one.IsEnabled && one.UsesInterface)
-                .Select(one => one.Name)
+                .Select(one => one.InterfaceName)
                 .Distinct(StringComparer.Ordinal),
         ];
     }
@@ -103,7 +103,7 @@ public static class OutboundRuleset
         var links = new List<string>();
         foreach (var outbound in outbounds.Where(one => one.IsEnabled))
         {
-            var link = outbound.UsesInterface ? outbound.Name : uplink;
+            var link = outbound.UsesInterface ? outbound.InterfaceName : uplink;
             if (link.Length > 0 && !links.Contains(link))
             {
                 links.Add(link);

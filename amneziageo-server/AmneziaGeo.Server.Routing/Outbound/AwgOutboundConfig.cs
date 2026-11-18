@@ -8,7 +8,9 @@ namespace AmneziaGeo.Server.Routing.Outbound;
 public sealed record AwgOutboundConfig : OutboundConfig
 {
     /// <inheritdoc/>
-    public override bool UsesInterface => true;
+    public override string InterfaceName => Name;
+    /// <inheritdoc/>
+    public override bool OwnsInterface => true;
     /// <inheritdoc/>
     public override OutboundFault? CheckSettings() => AwgOutboundRules.Check(this);
 

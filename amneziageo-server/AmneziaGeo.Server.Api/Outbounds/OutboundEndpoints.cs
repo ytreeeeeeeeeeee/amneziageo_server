@@ -90,7 +90,13 @@ public static class OutboundEndpoints
         CancellationToken ct)
     {
         using var hold = await host.HoldAsync(ct).ConfigureAwait(false);
-        var result = await store.AddAsync(OutboundAnswers.Draft(request), ct).ConfigureAwait(false);
+        var draft = OutboundAnswers.Draft(request);
+        if (host.CheckReservation(draft) is { } conflict)
+        {
+            return Refuse(StatusCodes.Status409Conflict, conflict.Code, conflict.Message);
+        }
+
+        var result = await store.AddAsync(draft, ct).ConfigureAwait(false);
         if (!result.IsOk)
         {
             return Explain(result);
@@ -140,10 +146,17 @@ public static class OutboundEndpoints
         RouteApplier routes,
         DnsHost resolver,
         OutboundAnswers answers,
+        ILogger<OutboundHost> logger,
         CancellationToken ct)
     {
         using var hold = await host.HoldAsync(ct).ConfigureAwait(false);
         var held = await store.FindAsync(id, ct).ConfigureAwait(false);
+        var draft = OutboundAnswers.Draft(request);
+        if (held is not null && host.CheckReservation(draft, held) is { } conflict)
+        {
+            return Refuse(StatusCodes.Status409Conflict, conflict.Code, conflict.Message);
+        }
+
         if (held is not null
             && request.Balancers is { } holders
             && await balancers.RefuseHoldersAsync(held.Name, holders, ct).ConfigureAwait(false) is { } refusal)
@@ -158,7 +171,7 @@ public static class OutboundEndpoints
             return Refuse(StatusCodes.Status400BadRequest, refused.Code, refused.Message);
         }
 
-        var result = await store.ChangeAsync(id, OutboundAnswers.Draft(request), ct).ConfigureAwait(false);
+        var result = await store.ChangeAsync(id, draft, ct).ConfigureAwait(false);
         if (!result.IsOk)
         {
             return Explain(result);
@@ -174,12 +187,19 @@ public static class OutboundEndpoints
             await rules.LeaveThroughAsync(result.Record!.Name, request.Rules, ct).ConfigureAwait(false);
         }
 
-        if (held is not null && (held.Name != result.Record!.Name || held.Kind != result.Record.Kind))
+        var state = await host.ApplyAsync(result.Record!, ct, held).ConfigureAwait(false);
+        if (state.Fault.Length > 0)
         {
-            await host.WithdrawAsync(held, ct).ConfigureAwait(false);
+            logger.LogWarning("the outbound {Outbound} is saved but its host change failed: {Reason}",
+                result.Record!.Name, state.Fault);
+        }
+        else if (held is not null && (held.Name != result.Record!.Name || held.Kind != result.Record.Kind
+            || held.InterfaceName != result.Record.InterfaceName))
+        {
+            logger.LogInformation("the host completed the change of outbound {Outbound} from {Kind} to {NewKind}",
+                result.Record.Name, held.Kind, result.Record.Kind);
         }
 
-        var state = await host.ApplyAsync(result.Record!, ct).ConfigureAwait(false);
         await FirewallAsync(store, host, routes, ct).ConfigureAwait(false);
         if (held is not null)
         {

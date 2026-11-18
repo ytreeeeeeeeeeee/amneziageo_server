@@ -109,8 +109,11 @@ public class OutboundHostTests
     {
         var ledger = new Ledger();
         ledger.Links.Add("awgbor");
-        ledger.Down.Add("awgbor");
         var host = Host(ledger, new Kernel());
+
+        await host.ApplyAsync(Tunnel(), CancellationToken.None);
+        ledger.Steps.Clear();
+        ledger.Down.Add("awgbor");
 
         var mended = await host.MendAsync(Tunnel(), CancellationToken.None);
 
@@ -128,7 +131,10 @@ public class OutboundHostTests
         off.Links.Add("awgbor");
         off.Down.Add("awgbor");
 
-        var upMended = await Host(up, new Kernel()).MendAsync(Tunnel(), CancellationToken.None);
+        var upHost = Host(up, new Kernel());
+        await upHost.ApplyAsync(Tunnel(), CancellationToken.None);
+        up.Steps.Clear();
+        var upMended = await upHost.MendAsync(Tunnel(), CancellationToken.None);
         var offMended = await Host(off, new Kernel())
             .MendAsync(Tunnel() with { IsEnabled = false }, CancellationToken.None);
 
@@ -142,6 +148,11 @@ public class OutboundHostTests
         var ledger = new Ledger();
         var kernel = new Kernel();
         var host = Host(ledger, kernel);
+
+        await host.ApplyAsync(Tunnel(), CancellationToken.None);
+        ledger.Links.Clear();
+        ledger.Steps.Clear();
+        kernel.Updates.Clear();
 
         var mended = await host.MendAsync(Tunnel(), CancellationToken.None);
 
@@ -198,9 +209,12 @@ public class OutboundHostTests
     public async Task AnOutboundThroughTheHostItselfIsNotMended()
     {
         var ledger = new Ledger();
+        var host = Host(ledger, new Kernel());
+        var local = LocalOutboundDefaults.Direct();
+        await host.ApplyAsync(local, CancellationToken.None);
+        ledger.Steps.Clear();
 
-        var mended = await Host(ledger, new Kernel())
-            .MendAsync(Tunnel() with { Kind = OutboundKind.Local }, CancellationToken.None);
+        var mended = await host.MendAsync(local, CancellationToken.None);
 
         Assert.False(mended);
         Assert.Empty(ledger.Steps);

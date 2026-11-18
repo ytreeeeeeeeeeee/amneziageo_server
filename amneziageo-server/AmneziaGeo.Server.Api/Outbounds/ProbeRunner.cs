@@ -37,10 +37,15 @@ public sealed class ProbeRunner
             return false;
         }
 
+        if (_live.Find(outbound.Id) is not null && _live.Find(outbound) is null)
+        {
+            _logger.LogInformation("the probe of '{Outbound}' starts again for its changed settings", outbound.Name);
+        }
+
         var outcome = await _link
             .ReachAsync(server, outbound.Mark, ProbeDefaults.Name, ProbeDefaults.Wait, ct)
             .ConfigureAwait(false);
-        var changed = _live.Keep(outbound.Name, outcome, _time.GetUtcNow());
+        var changed = _live.Keep(outbound, outcome, _time.GetUtcNow());
         if (changed)
         {
             _logger.LogInformation(
@@ -65,7 +70,7 @@ public sealed class ProbeRunner
             return false;
         }
 
-        var reading = _live.Find(outbound.Name);
+        var reading = _live.Find(outbound);
         var every = outbound.ProbeEvery > 0 ? outbound.ProbeEvery : ProbeDefaults.Every;
 
         return reading is null || _time.GetUtcNow() - reading.At >= TimeSpan.FromSeconds(every);

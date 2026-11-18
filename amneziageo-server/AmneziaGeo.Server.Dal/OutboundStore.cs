@@ -174,7 +174,7 @@ public sealed class OutboundStore
         }
 
         var old = entity.Name;
-        var now = _time.GetUtcNow();
+        var now = RevisionAfter(entity.UpdatedUtc);
         var transaction = await _db.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
         await using var disposal = transaction.ConfigureAwait(false);
         var replacement = Create(full);
@@ -211,7 +211,7 @@ public sealed class OutboundStore
         }
 
         entity.IsEnabled = on;
-        entity.UpdatedUtc = _time.GetUtcNow();
+        entity.UpdatedUtc = RevisionAfter(entity.UpdatedUtc);
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);
         return OutboundResult.Done(entity.ToConfig());
     }
@@ -326,6 +326,13 @@ public sealed class OutboundStore
 
     private static OutboundResult Missing(long id) =>
         OutboundResult.No(OutboundOutcome.Unknown, "unknown-outbound", $"there is no outbound under the number {id}");
+
+    // Probe results use this timestamp as the saved revision, including when the clock stalls or moves back.
+    private DateTimeOffset RevisionAfter(DateTimeOffset previous)
+    {
+        var now = _time.GetUtcNow();
+        return now > previous ? now : previous.AddTicks(1);
+    }
 
     private static OutboundResult Taken(string name) =>
         OutboundResult.No(

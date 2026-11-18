@@ -11,7 +11,7 @@ public abstract record OutboundConfig
     public long Id { get; init; }
 
     /// <summary>
-    /// The name of the outbound, and of its interface when it carries one.
+    /// The name other routing settings use to refer to this outbound.
     /// </summary>
     public required string Name { get; init; }
 
@@ -21,9 +21,19 @@ public abstract record OutboundConfig
     public string Kind { get; init; } = string.Empty;
 
     /// <summary>
+    /// The network interface this way out uses, empty when it uses the host's uplink.
+    /// </summary>
+    public virtual string InterfaceName => string.Empty;
+
+    /// <summary>
     /// Whether this way out uses a separate interface and routing table.
     /// </summary>
-    public virtual bool UsesInterface => false;
+    public bool UsesInterface => InterfaceName.Length > 0;
+
+    /// <summary>
+    /// Whether the driver creates and removes this interface, rather than using an externally managed one.
+    /// </summary>
+    public virtual bool OwnsInterface => false;
 
     /// <summary>
     /// Checks the settings specific to this implementation.

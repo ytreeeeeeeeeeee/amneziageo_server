@@ -58,6 +58,7 @@ public static partial class OutboundRules
         ArgumentNullException.ThrowIfNull(outbound);
 
         return CheckName(outbound.Name)
+               ?? (outbound.UsesInterface ? CheckName(outbound.InterfaceName) : null)
                ?? CheckKind(outbound.Kind)
             ?? CheckMark(outbound.Mark)
             ?? CheckTable(outbound)

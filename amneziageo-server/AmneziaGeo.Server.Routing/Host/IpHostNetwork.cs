@@ -168,29 +168,37 @@ public sealed class IpHostNetwork : IHostNetwork
     /// </summary>
     public async Task<bool> RuleAsync(uint mark, int table, int priority, bool present, CancellationToken ct)
     {
-        if (await HasRuleAsync(priority, mark, ct).ConfigureAwait(false) == present)
+        var rules = Rules();
+        var changed = false;
+        foreach (var family in new[] { PolicyRules.Inet, PolicyRules.Inet6 })
         {
-            return false;
+            var read = rules ?? await ReadRulesAsync(family, priority, ct).ConfigureAwait(false);
+            var held = read.Where(rule => rule.Family == family && rule.Priority == (uint)priority && rule.Mark == mark)
+                .ToArray();
+            if (present && held.Length == 1 && held[0].Table == (uint)table
+                && held[0].Action == PolicyRules.ToTable && (held[0].Mask ?? uint.MaxValue) == uint.MaxValue)
+            {
+                continue;
+            }
+
+            string[] prefix = family == PolicyRules.Inet6 ? [Ip, "-6"] : [Ip];
+            foreach (var rule in held)
+            {
+                var mask = (rule.Mask ?? uint.MaxValue) == uint.MaxValue ? "" : $"/0x{rule.Mask:x}";
+                await RunAsync([.. prefix, "rule", "del", "pref", priority.ToString(), "fwmark", $"{mark}{mask}"], ct)
+                    .ConfigureAwait(false);
+                changed = true;
+            }
+
+            if (present)
+            {
+                await RunAsync([.. prefix, "rule", "add", "pref", priority.ToString(), "fwmark", mark.ToString(),
+                    "lookup", table.ToString()], ct).ConfigureAwait(false);
+                changed = true;
+            }
         }
 
-        var number = table.ToString();
-        var value = mark.ToString();
-        var order = priority.ToString();
-        var verb = present ? "add" : "del";
-        var words = new[] { Ip, "rule", verb, "pref", order, "fwmark", value, "lookup", number };
-        if (present)
-        {
-            await RunAsync(words, ct).ConfigureAwait(false);
-        }
-        else
-        {
-            await Quietly(words, ct).ConfigureAwait(false);
-        }
-
-        await Quietly([Ip, "-6", "rule", verb, "pref", order, "fwmark", value, "lookup", number], ct)
-            .ConfigureAwait(false);
-
-        return true;
+        return changed;
     }
 
     /// <summary>
@@ -343,18 +351,44 @@ public sealed class IpHostNetwork : IHostNetwork
         }
     }
 
-    private async Task<bool> HasRuleAsync(int priority, uint mark, CancellationToken ct)
+    private async Task<IReadOnlyList<PolicyRule>> ReadRulesAsync(byte family, int priority, CancellationToken ct)
     {
-        if (Rules() is { } rules)
+        string[] prefix = family == PolicyRules.Inet6 ? ["-6"] : [];
+        var result = await _commands.RunAsync(Ip,
+            [.. prefix, "-N", "-j", "rule", "show", "pref", priority.ToString()], null, ct).ConfigureAwait(false);
+        if (!result.IsOk)
         {
-            return rules.Any(rule => rule.Family == PolicyRules.Inet && rule.Priority == (uint)priority && rule.Mark == mark);
+            throw new HostNetworkException($"the routing policy did not read: {result.Complaint}");
         }
 
-        var result = await _commands
-            .RunAsync(Ip, ["rule", "show", "pref", priority.ToString()], null, ct)
-            .ConfigureAwait(false);
+        try
+        {
+            using var document = JsonDocument.Parse(result.Output);
+            return [.. document.RootElement.EnumerateArray().Select(rule => new PolicyRule(
+                family,
+                rule.TryGetProperty("priority", out var place) ? RuleNumber(place) : 0,
+                rule.TryGetProperty("fwmark", out var mark) ? RuleNumber(mark) : null,
+                rule.TryGetProperty("fwmask", out var mask) ? RuleNumber(mask) : uint.MaxValue,
+                rule.TryGetProperty("action", out var action) ? checked((byte)RuleNumber(action)) : PolicyRules.ToTable,
+                rule.TryGetProperty("table", out var table) ? RuleNumber(table) : 0))];
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException or OverflowException)
+        {
+            throw new HostNetworkException("the host returned an unreadable routing policy", ex);
+        }
+    }
 
-        return result.IsOk && result.Output.Contains($"fwmark 0x{mark:x}", StringComparison.OrdinalIgnoreCase);
+    private static uint RuleNumber(JsonElement value)
+    {
+        if (value.ValueKind == JsonValueKind.Number)
+        {
+            return value.GetUInt32();
+        }
+
+        var text = value.GetString() ?? string.Empty;
+        return text.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+            ? uint.Parse(text[2..], NumberStyles.HexNumber, CultureInfo.InvariantCulture)
+            : uint.Parse(text, CultureInfo.InvariantCulture);
     }
 
     private async Task<bool> HasSealAsync(

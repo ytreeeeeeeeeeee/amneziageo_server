@@ -113,6 +113,45 @@ public class OutboundTests
         Assert.Null(OutboundRules.Check(LocalOutboundDefaults.Direct()));
     }
 
+    [Fact]
+    public void AnOutboundAliasIsIndependentOfItsNetworkInterface()
+    {
+        var outbound = new InterfaceOutbound { Name = "exit-ams", Link = "tt-ams", Kind = "test",
+            Mark = OutboundRules.FirstMark, Table = OutboundRules.FirstTable };
+
+        Assert.Null(OutboundRules.Check(outbound));
+        Assert.Equal("tt-ams", Assert.Single(OutboundRuleset.Links([outbound], "eth0")));
+        Assert.Equal("tt-ams", Assert.Single(OutboundRuleset.Tunnels([outbound])));
+        var text = OutboundRuleset.Text([outbound], "eth0");
+
+        Assert.Contains("oifname \"tt-ams\" masquerade", text, StringComparison.Ordinal);
+        Assert.Contains("oifname \"tt-ams\" " + OutboundRuleset.Clamp, text, StringComparison.Ordinal);
+        Assert.Contains("oifname \"tt-ams\" ct state new ip daddr", text, StringComparison.Ordinal);
+        Assert.Contains("iifname { \"tt-ams\" }", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("exit-ams", text, StringComparison.Ordinal);
+        Assert.Equal("bad-interface-name", OutboundRules.Check(outbound with { Link = "bad\"link" })?.Code);
+        Assert.Equal("tt-ams", Assert.Single(OutboundRuleset.Links([outbound, outbound with { Name = "alias" }], "eth0")));
+    }
+
+    [Fact]
+    public void AwgKeepsItsInterfaceNameAndLocalHasNoInterfaceOfItsOwn()
+    {
+        var awg = Tunnel();
+        Assert.Equal(awg.Name, awg.InterfaceName);
+        Assert.True(awg.UsesInterface);
+        Assert.Empty(LocalOutboundDefaults.Direct().InterfaceName);
+        Assert.False(LocalOutboundDefaults.Direct().UsesInterface);
+    }
+
+    private sealed record InterfaceOutbound : OutboundConfig
+    {
+        public required string Link { get; init; }
+
+        public override string InterfaceName => Link;
+
+        public override OutboundFault? CheckSettings() => null;
+    }
+
     [Theory]
     [InlineData("Name", "bad-interface-name")]
     [InlineData("Kind", "bad-kind")]

@@ -36,6 +36,7 @@ public sealed class OutboundBoot : BackgroundService
         {
             using var scope = _scopes.CreateScope();
             var services = scope.ServiceProvider;
+            using var hold = await _host.HoldAsync(stoppingToken).ConfigureAwait(false);
             var outbounds = await services.GetRequiredService<OutboundStore>().ListAsync(stoppingToken)
                 .ConfigureAwait(false);
             await LayAsync(outbounds, stoppingToken).ConfigureAwait(false);

@@ -13,7 +13,8 @@ public class IpHostNetworkTests
     public async Task ARuleTheHostAlreadyHoldsIsNotAddedAgain()
     {
         var tools = new Tools();
-        var network = Holding(tools, Marked(10000, 0xA601, 254));
+        var rule = Marked(10000, 0xA601, 254);
+        var network = Holding(tools, rule, rule with { Family = PolicyRules.Inet6 });
 
         await network.RuleAsync(0xA601, 254, 10000, true, CancellationToken.None);
 
@@ -48,15 +49,73 @@ public class IpHostNetworkTests
     }
 
     [Fact]
-    public async Task ARuleTheHostRefusesToTakeOffLeavesTheCommandStanding()
+    public async Task ARuleTheHostRefusesToTakeOffReportsTheFailure()
     {
         var tools = new Tools();
         tools.Answers["ip rule del"] = new CommandResult(2, string.Empty, "RTNETLINK answers: No such file or directory");
         var network = Holding(tools, Marked(10001, 0xA602, 254));
 
-        await network.RuleAsync(0xA602, 42602, 10001, false, CancellationToken.None);
+        await Assert.ThrowsAsync<HostNetworkException>(
+            () => network.RuleAsync(0xA602, 42602, 10001, false, CancellationToken.None));
 
-        Assert.True(tools.Called("ip rule del pref 10001 fwmark 42498 lookup 42602"));
+        Assert.True(tools.Called("ip rule del pref 10001 fwmark 42498"));
+    }
+
+    [Theory]
+    [InlineData(254u, uint.MaxValue, PolicyRules.ToTable)]
+    [InlineData(42602u, 0xFFFFFF00u, PolicyRules.ToTable)]
+    [InlineData(42602u, uint.MaxValue, PolicyRules.Unreachable)]
+    public async Task ARuleWithTheWrongTableMaskOrActionIsReplaced(uint table, uint mask, byte action)
+    {
+        var tools = new Tools();
+        var network = Holding(tools, Marked(10001, 0xA602, table) with { Mask = mask, Action = action });
+
+        Assert.True(await network.RuleAsync(0xA602, 42602, 10001, true, CancellationToken.None));
+
+        Assert.StartsWith("ip rule del pref 10001 fwmark 42498", tools.Calls[0]);
+        Assert.Equal("ip rule add pref 10001 fwmark 42498 lookup 42602", tools.Calls[1]);
+        Assert.Equal("ip -6 rule add pref 10001 fwmark 42498 lookup 42602", tools.Calls[2]);
+    }
+
+    [Fact]
+    public async Task AnExistingIPv4RuleDoesNotHideAMissingIPv6Rule()
+    {
+        var tools = new Tools();
+        var network = Holding(tools, Marked(10001, 0xA602, 42602));
+
+        await network.RuleAsync(0xA602, 42602, 10001, true, CancellationToken.None);
+
+        Assert.Equal(["ip -6 rule add pref 10001 fwmark 42498 lookup 42602"], tools.Calls);
+    }
+
+    [Fact]
+    public async Task APartialFamilyFailureIsRepairedOnTheNextAttempt()
+    {
+        var tools = new Tools();
+        tools.Answers["ip -6 rule add"] = new CommandResult(2, "", "refused");
+        var held = new List<PolicyRule>();
+        var network = new IpHostNetwork(tools, (_, _) => null, () => held);
+        await Assert.ThrowsAsync<HostNetworkException>(
+            () => network.RuleAsync(0xA602, 42602, 10001, true, CancellationToken.None));
+        held.Add(Marked(10001, 0xA602, 42602));
+        tools.Answers.Clear();
+        tools.Calls.Clear();
+
+        Assert.True(await network.RuleAsync(0xA602, 42602, 10001, true, CancellationToken.None));
+
+        Assert.Equal(["ip -6 rule add pref 10001 fwmark 42498 lookup 42602"], tools.Calls);
+    }
+
+    [Fact]
+    public async Task DuplicateOwnedRulesAreReplacedByOneExactRule()
+    {
+        var tools = new Tools();
+        var network = Holding(tools, Marked(10001, 0xA602, 254), Marked(10001, 0xA602, 42602));
+
+        await network.RuleAsync(0xA602, 42602, 10001, true, CancellationToken.None);
+
+        Assert.Equal(2, tools.Calls.Count(call => call.StartsWith("ip rule del", StringComparison.Ordinal)));
+        Assert.Equal(1, tools.Calls.Count(call => call.StartsWith("ip rule add", StringComparison.Ordinal)));
     }
 
     [Fact]
@@ -255,7 +314,10 @@ public class IpHostNetworkTests
     {
         var asked = 0;
         var tools = new Tools();
-        tools.Answers["ip rule show pref 10000"] = new CommandResult(0, "10000:\tfrom all fwmark 0xa601 lookup main\n", string.Empty);
+        tools.Answers["ip -N -j rule show pref 10000"] = new CommandResult(0,
+            """[{"priority":10000,"fwmark":"0xa601","table":"254"}]""", string.Empty);
+        tools.Answers["ip -6 -N -j rule show pref 10000"] = new CommandResult(0,
+            """[{"priority":10000,"fwmark":"0xa601","table":"254"}]""", string.Empty);
         tools.Answers["ip rule show pref 10255"] = new CommandResult(0, "10255:\tfrom all fwmark 0xa600/0xffffff00 unreachable\n", string.Empty);
         var network = new IpHostNetwork(tools, (_, _) => null, () =>
         {
@@ -269,12 +331,48 @@ public class IpHostNetworkTests
         Assert.Equal(1, asked);
         Assert.Equal(
             [
-                "ip rule show pref 10000",
+                "ip -N -j rule show pref 10000",
+                "ip -6 -N -j rule show pref 10000",
                 "ip rule show pref 10255",
                 "ip -6 rule show pref 10255",
                 "ip -6 rule add pref 10255 fwmark 0xa600/0xffffff00 unreachable",
             ],
             tools.Calls);
+    }
+
+    [Theory]
+    [InlineData("0xa6010", "254", null, null, false)]
+    [InlineData("0xa601", "42601", null, null, true)]
+    [InlineData("0xa601", "254", "0xffffff00", null, true)]
+    [InlineData("0xa601", null, null, "7", true)]
+    public async Task TheToolFallbackChecksTheWholeRule(string mark, string? table, string? mask, string? action, bool remove)
+    {
+        var tools = new Tools();
+        var json = System.Text.Json.JsonSerializer.Serialize(new[] { new { priority = 10000, fwmark = mark,
+            table = table ?? "0", fwmask = mask ?? "0xffffffff", action = action ?? "1" } });
+        tools.Answers["ip -N -j rule show"] = new CommandResult(0, json, "");
+        tools.Answers["ip -6 -N -j rule show"] = new CommandResult(0, "[]", "");
+        var network = new IpHostNetwork(tools, (_, _) => null, () => throw new NetlinkException("refused", 1));
+
+        await network.RuleAsync(0xA601, 254, 10000, true, CancellationToken.None);
+
+        Assert.Equal(remove, tools.Called("ip rule del"));
+        Assert.True(tools.Called("ip rule add pref 10000 fwmark 42497 lookup 254"));
+    }
+
+    [Theory]
+    [InlineData(1, "", "refused")]
+    [InlineData(0, "not json", "")]
+    public async Task AnUnreadablePolicyIsNotTreatedAsAnEmptyOne(int code, string output, string error)
+    {
+        var tools = new Tools();
+        tools.Answers["ip -N -j rule show"] = new CommandResult(code, output, error);
+        var network = new IpHostNetwork(tools, (_, _) => null, () => throw new NetlinkException("refused", 1));
+
+        await Assert.ThrowsAsync<HostNetworkException>(
+            () => network.RuleAsync(0xA601, 254, 10000, true, CancellationToken.None));
+
+        Assert.Single(tools.Calls);
     }
 
     // A network whose kernel holds the rules given.
