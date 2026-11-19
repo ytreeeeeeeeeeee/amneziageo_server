@@ -135,6 +135,11 @@ public sealed class OutboundStore
             return OutboundResult.No(OutboundOutcome.Invalid, fault.Code, fault.Message);
         }
 
+        if (await InterfaceFaultAsync(full, null, ct).ConfigureAwait(false) is { } occupied)
+        {
+            return OutboundResult.No(OutboundOutcome.NameTaken, occupied.Code, occupied.Message);
+        }
+
         var now = _time.GetUtcNow();
         var entity = Create(full);
         entity.CreatedUtc = now;
@@ -171,6 +176,11 @@ public sealed class OutboundStore
         if (OutboundRules.Check(full) is { } fault)
         {
             return OutboundResult.No(OutboundOutcome.Invalid, fault.Code, fault.Message);
+        }
+
+        if (await InterfaceFaultAsync(full, entity.ToConfig(), ct).ConfigureAwait(false) is { } occupied)
+        {
+            return OutboundResult.No(OutboundOutcome.NameTaken, occupied.Code, occupied.Message);
         }
 
         var old = entity.Name;
@@ -302,6 +312,29 @@ public sealed class OutboundStore
         }
 
         return await _db.Balancers.AnyAsync(one => one.Name == body, ct).ConfigureAwait(false);
+    }
+
+    private async Task<OutboundFault?> InterfaceFaultAsync(OutboundConfig candidate, OutboundConfig? previous,
+        CancellationToken ct)
+    {
+        if (!candidate.UsesInterface)
+        {
+            return null;
+        }
+
+        if (previous is not null && previous.InterfaceName == candidate.InterfaceName
+            && previous.OwnsInterface != candidate.OwnsInterface)
+        {
+            return new("interface-ownership-change",
+                "choose another interface when switching between a managed and an existing-interface outbound");
+        }
+
+        var id = previous?.Id ?? 0;
+        var rows = await _db.Outbounds.AsNoTracking().Where(one => one.Id != id).ToListAsync(ct).ConfigureAwait(false);
+        return rows.Select(one => one.ToConfig()).Any(one => one.InterfaceName == candidate.InterfaceName
+            && (one.OwnsInterface || candidate.OwnsInterface))
+            ? new("interface-in-use", $"the interface '{candidate.InterfaceName}' is reserved by another outbound")
+            : null;
     }
 
     private async Task<uint> FreeMarkAsync(CancellationToken ct)

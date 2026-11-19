@@ -18,15 +18,9 @@ public sealed class RouteTester
 {
     private readonly RouteApplier _applier;
 
-    private readonly RouteStore _rules;
-
     private readonly ClientStore _clients;
 
     private readonly ConfigStore _configs;
-
-    private readonly OutboundStore _outbounds;
-
-    private readonly BalanceStore _balancers;
 
     private readonly BalanceLive _live;
 
@@ -39,21 +33,15 @@ public sealed class RouteTester
     /// </summary>
     public RouteTester(
         RouteApplier applier,
-        RouteStore rules,
         ClientStore clients,
         ConfigStore configs,
-        OutboundStore outbounds,
-        BalanceStore balancers,
         BalanceLive live,
         DnsSets sets,
         DnsHost dns)
     {
         _applier = applier;
-        _rules = rules;
         _clients = clients;
         _configs = configs;
-        _outbounds = outbounds;
-        _balancers = balancers;
         _live = live;
         _sets = sets;
         _dns = dns;
@@ -105,22 +93,33 @@ public sealed class RouteTester
             Inbound = inbound,
         };
 
-        var verdict = RouteProbe.Test(plan, query, _sets.Holds);
-        var rule = await RuleAsync(verdict.Leg, ct).ConfigureAwait(false);
-        var exit = verdict.Leg is { } leg && leg.Rule.Action == RouteAction.Out
-            ? await ExitAsync(leg, ct).ConfigureAwait(false)
-            : null;
+        var results = new List<RouteTestAddress>();
+        foreach (var address in addresses.Distinct().OrderBy(one => one.AddressFamily).ThenBy(one => one.ToString(), StringComparer.Ordinal))
+        {
+            results.Add(Answer(plan, query with { Addresses = [address] }, address.ToString()));
+        }
 
+        var first = results.FirstOrDefault() ?? Answer(plan, query, "");
         return (null, new RouteTestResponse(
-            verdict.Verdict,
-            verdict.Guard,
+            first.Verdict,
+            first.Guard,
             query.Name,
-            [.. addresses.Select(address => address.ToString())],
+            [.. results.Select(one => one.Address)],
             inbound,
             [.. sources.Select(address => address.ToString())],
-            rule,
-            exit,
-            verdict.Steps));
+            first.Rule,
+            first.Exit,
+            first.Steps) { Results = results });
+    }
+
+    private RouteTestAddress Answer(RoutePlan plan, RouteQuery query, string address)
+    {
+        var verdict = RouteProbe.Test(plan, query, _sets.Holds);
+        var rule = Rule(verdict.Leg, plan);
+        var exit = verdict.Leg is { } leg && leg.Rule.Action == RouteAction.Out
+            ? Exit(leg, plan.Ways)
+            : null;
+        return new(address, verdict.Verdict, verdict.Guard, rule, exit, verdict.Steps);
     }
 
     private static string Host(string? text)
@@ -185,23 +184,23 @@ public sealed class RouteTester
         }
     }
 
-    private async Task<RouteTestRule?> RuleAsync(RouteLeg? leg, CancellationToken ct)
+    private static RouteTestRule? Rule(RouteLeg? leg, RoutePlan plan)
     {
         if (leg is null)
         {
             return null;
         }
 
-        var rules = await _rules.ListAsync(ct).ConfigureAwait(false);
-        var place = rules.Select((rule, at) => (rule.Id, Place: at + 1)).FirstOrDefault(one => one.Id == leg.Rule.Id).Place;
+        var place = plan.Legs.Where(one => one.Rule.Id > 0).Select((one, at) => (one.Rule.Id, Place: at + 1))
+            .FirstOrDefault(one => one.Id == leg.Rule.Id).Place;
 
         return new RouteTestRule(leg.Rule.Id, leg.Rule.Name, place, leg.Rule.Action, leg.Rule.Outbound);
     }
 
-    private async Task<RouteTestExit> ExitAsync(RouteLeg leg, CancellationToken ct)
+    private RouteTestExit Exit(RouteLeg leg, RouteWays ways)
     {
-        var outbounds = await _outbounds.ListAsync(ct).ConfigureAwait(false);
-        var balancers = await _balancers.ListAsync(ct).ConfigureAwait(false);
+        var outbounds = ways.Outbounds;
+        var balancers = ways.Balancers;
         var name = leg.Rule.Outbound;
         var group = balancers.FirstOrDefault(one => string.Equals(one.Name, name, StringComparison.Ordinal));
         var names = group?.Members ?? [name];

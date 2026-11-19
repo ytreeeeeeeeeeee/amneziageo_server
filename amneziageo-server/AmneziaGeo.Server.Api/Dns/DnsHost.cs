@@ -257,7 +257,8 @@ public sealed class DnsHost : BackgroundService
         var upstream = new DnsUpstream(
             _settings.Upstreams,
             DnsDefaults.Wait,
-            () => Way(Volatile.Read(ref _settings), Interlocked.Increment(ref _turns)).Mark);
+            familyWay: family => DnsExit.Way(Volatile.Read(ref _settings), _plans.Held?.Ways ?? RouteWays.None,
+                Interlocked.Increment(ref _turns), family).Mark);
         var resolver = new DnsResolver(
             upstream,
             new DnsCache(_settings.CacheSize, _time),

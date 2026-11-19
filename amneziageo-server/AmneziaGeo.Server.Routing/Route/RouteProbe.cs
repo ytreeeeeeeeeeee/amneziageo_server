@@ -158,7 +158,12 @@ public static class RouteProbe
             steps.Add(step);
             if (step.Outcome == Match)
             {
-                return new RouteVerdict(Verdict(leg), string.Empty, leg, steps);
+                var address = step.Reason is "range" or "resolved" ? IPAddress.Parse(step.Detail) : query.Addresses.FirstOrDefault();
+                var six = address?.AddressFamily == AddressFamily.InterNetworkV6;
+                var selected = leg with { Exit = leg.Exit.ForFamily(six) };
+                var verdict = !leg.IsBlock && !leg.IsDirect && selected.Exit.Marks.Count == 0
+                    ? Held : Verdict(selected);
+                return new RouteVerdict(verdict, string.Empty, selected, steps);
             }
         }
 

@@ -125,7 +125,7 @@ export function Channels() {
               caption: t("outbounds.server"),
               sort: (line) =>
                 line.kind === "channel" && line.channel.kind !== "local"
-                  ? `${line.channel.host}:${line.channel.port}`
+                  ? server(line.channel)
                   : line.kind === "group"
                     ? line.group.state.members.map((member) => member.name).join(", ")
                     : null,
@@ -135,7 +135,7 @@ export function Channels() {
                 ) : line.channel.kind === "local" ? (
                   ""
                 ) : (
-                  `${line.channel.host}:${line.channel.port}`
+                  server(line.channel)
                 ),
             },
             {
@@ -332,6 +332,9 @@ function groupRank(balancer: Balancer): number {
 }
 
 function kindKey(kind: OutboundKind): TextKey {
+  if (kind === "interface") {
+    return "outbounds.kindInterface"
+  }
   if (kind === "wg") {
     return "outbounds.kindWg"
   }
@@ -363,7 +366,15 @@ function matches(line: Line, find: string): boolean {
 
   return (
     line.channel.name.toLowerCase().includes(query) ||
-    (line.channel.kind !== "local" && (line.channel.host.toLowerCase().includes(query) ||
-    String(line.channel.port).includes(query)))
+    server(line.channel).toLowerCase().includes(query)
   )
+}
+
+function server(outbound: Outbound): string {
+  if (outbound.kind === "local") {
+    return ""
+  }
+  return outbound.kind === "interface"
+    ? `${outbound.interfaceName} (${[outbound.ipv4 && "IPv4", outbound.ipv6 && "IPv6"].filter(Boolean).join(" / ")})`
+    : `${outbound.host}:${outbound.port}`
 }

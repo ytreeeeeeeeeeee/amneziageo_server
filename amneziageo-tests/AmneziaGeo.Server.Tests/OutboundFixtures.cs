@@ -1,3 +1,4 @@
+using System.Net.Sockets;
 using AmneziaGeo.Server.Awg.Device;
 using AmneziaGeo.Server.Routing.Host;
 
@@ -113,6 +114,18 @@ public sealed class Ledger : IHostNetwork
     /// Puts the way out through an interface into a routing table.
     /// </summary>
     public Task RouteAsync(string name, int table, CancellationToken ct) => Step($"route {name} {table}");
+
+    public async Task<bool> DefaultRouteAsync(string name, int table, AddressFamily family, string gateway, CancellationToken ct)
+    {
+        await Step($"default-route {name} {table} {family} {gateway}");
+        return false;
+    }
+
+    public async Task<bool> UnreachableRouteAsync(int table, AddressFamily family, CancellationToken ct)
+    {
+        await Step($"unreachable-route {table} {family}");
+        return false;
+    }
 
     /// <summary>
     /// Lets the host pass packets between interfaces, in both families.

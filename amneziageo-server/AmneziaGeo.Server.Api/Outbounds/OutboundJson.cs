@@ -28,6 +28,7 @@ public static class OutboundJson
                     DerivedTypes =
                     {
                         new(typeof(LocalOutboundRequest), OutboundKind.Local),
+                        new(typeof(InterfaceOutboundRequest), OutboundKind.Interface),
                         new(typeof(AwgOutboundRequest), OutboundKind.Wg),
                         new(typeof(WsOutboundRequest), OutboundKind.Ws),
                     },
@@ -42,7 +43,8 @@ public static class OutboundJson
             if (info.Type == typeof(OutboundResponse))
             {
                 info.PolymorphismOptions = new()
-                    { DerivedTypes = { new(typeof(LocalOutboundResponse)), new(typeof(AwgOutboundResponse)) } };
+                    { DerivedTypes = { new(typeof(LocalOutboundResponse)), new(typeof(AwgOutboundResponse)),
+                        new(typeof(InterfaceOutboundResponse)) } };
             }
 
             if (info.Type == typeof(OutboundStateBody))

@@ -557,7 +557,7 @@ public static class RouteRuleset
     private static IReadOnlyList<string> Plain(RouteLeg leg, ushort? journal)
     {
         var head = Inbound(leg.Rule);
-        if (!Sticky(leg))
+        if (!Sticky(leg) && !leg.Exit.FamiliesDiffer)
         {
             return [head + Ports(leg.Rule) + Verdict(leg, false, journal)];
         }
@@ -770,9 +770,15 @@ public static class RouteRuleset
             return log + "return";
         }
 
-        return leg.Exit.IsSpread
-            ? "meta mark set " + Pick(leg.Exit, six) + " map { " + Map(leg.Exit) + " } " + log + "return"
-            : "meta mark set " + Hex(leg.Exit.Mark) + " " + log + "return";
+        var exit = leg.Exit.ForFamily(six);
+        if (exit.Marks.Count == 0)
+        {
+            return log + "drop";
+        }
+
+        return exit.IsSpread
+            ? "meta mark set " + Pick(exit, six) + " map { " + Map(exit) + " } " + log + "return"
+            : "meta mark set " + Hex(exit.Mark) + " " + log + "return";
     }
 
     private static string Log(string prefix, ushort? journal) =>

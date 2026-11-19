@@ -36,8 +36,10 @@ public static class OutboundRuleset
     {
         ArgumentNullException.ThrowIfNull(outbounds);
 
-        var links = Links(outbounds, uplink);
-        var tunnels = Tunnels(outbounds);
+        var dedicated = outbounds.Where(one => one is not InterfaceOutboundConfig).ToArray();
+        var shared = outbounds.OfType<InterfaceOutboundConfig>().Where(one => one.IsEnabled).ToArray();
+        var links = Links(dedicated, uplink);
+        var tunnels = Tunnels(dedicated);
         var text = new StringBuilder();
         text.Append("table inet ").Append(TableName).Append('\n');
         text.Append("delete table inet ").Append(TableName).Append('\n');
@@ -47,6 +49,11 @@ public static class OutboundRuleset
         foreach (var link in links)
         {
             text.Append("\t\toifname \"").Append(link).Append("\" masquerade\n");
+        }
+
+        foreach (var outbound in shared)
+        {
+            text.Append($"\t\tmeta mark 0x{outbound.Mark:x} oifname \"{outbound.Device}\" masquerade\n");
         }
 
         text.Append("\t}\n\n");
@@ -61,14 +68,24 @@ public static class OutboundRuleset
             text.Append("\t\toifname \"").Append(link).Append("\" ").Append(Clamp).Append('\n');
         }
 
+        foreach (var outbound in shared)
+        {
+            text.Append($"\t\tmeta mark 0x{outbound.Mark:x} oifname \"{outbound.Device}\" {Clamp}\n");
+        }
+
         if (!string.IsNullOrEmpty(uplink))
         {
             text.Append("\t\tiifname \"").Append(uplink).Append("\" oifname \"").Append(uplink).Append("\" drop\n");
         }
 
-        foreach (var outbound in outbounds.Where(one => one.IsEnabled && one.ClosePrivate && one.UsesInterface))
+        foreach (var outbound in dedicated.Where(one => one.IsEnabled && one.ClosePrivate && one.UsesInterface))
         {
             Close(text, outbound.InterfaceName);
+        }
+
+        foreach (var outbound in shared.Where(one => one.ClosePrivate))
+        {
+            Close(text, outbound.Device, outbound.Mark);
         }
 
         Answers(text, tunnels);
@@ -125,11 +142,12 @@ public static class OutboundRuleset
         text.Append("\t\tiifname { ").Append(names).Append(" } drop\n");
     }
 
-    private static void Close(StringBuilder text, string name)
+    private static void Close(StringBuilder text, string name, uint? mark = null)
     {
-        text.Append("\t\toifname \"").Append(name).Append("\" ct state new ip daddr { ")
+        var selected = mark is { } value ? $"meta mark 0x{value:x} " : "";
+        text.Append("\t\t").Append(selected).Append("oifname \"").Append(name).Append("\" ct state new ip daddr { ")
             .Append(string.Join(", ", Private4)).Append(" } reject\n");
-        text.Append("\t\toifname \"").Append(name).Append("\" ct state new ip6 daddr { ")
+        text.Append("\t\t").Append(selected).Append("oifname \"").Append(name).Append("\" ct state new ip6 daddr { ")
             .Append(string.Join(", ", Private6)).Append(" } reject\n");
     }
 }

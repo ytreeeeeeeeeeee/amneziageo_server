@@ -5,6 +5,8 @@ namespace AmneziaGeo.Server.Routing.Outbound;
 /// </summary>
 public static class OutboundKind
 {
+    /// <summary>The outbound uses an existing, externally managed interface.</summary>
+    public const string Interface = "interface";
     /// <summary>
     /// Leaves through the uplink of the host itself.
     /// </summary>

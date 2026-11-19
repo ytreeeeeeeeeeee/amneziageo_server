@@ -57,8 +57,20 @@ public sealed class OutboundHost : IDisposable
         var own = Owner(owner ?? candidate);
         foreach (var (key, entry) in _standing)
         {
-            if (key == own || entry.Resources is not { } resource)
+            if (entry.Resources is not { } resource)
             {
+                continue;
+            }
+
+            if (key == own)
+            {
+                if (candidate.UsesInterface && candidate.InterfaceName == resource.InterfaceName
+                    && candidate.OwnsInterface != resource.OwnsInterface)
+                {
+                    return new("interface-ownership-change",
+                        "choose another interface when switching between a managed and an existing-interface outbound");
+                }
+
                 continue;
             }
 

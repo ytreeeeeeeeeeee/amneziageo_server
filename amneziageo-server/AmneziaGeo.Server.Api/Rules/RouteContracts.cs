@@ -102,6 +102,19 @@ public sealed record RouteTestResponse(
     IReadOnlyList<string> Sources,
     RouteTestRule? Rule,
     RouteTestExit? Exit,
+    IReadOnlyList<RouteStep> Steps)
+{
+    /// <summary>Independent decisions for every resolved destination; the top-level decision describes the first one.</summary>
+    public IReadOnlyList<RouteTestAddress> Results { get; init; } = [];
+}
+
+/// <summary>The route decision for one resolved destination address.</summary>
+public sealed record RouteTestAddress(
+    string Address,
+    string Verdict,
+    string Guard,
+    RouteTestRule? Rule,
+    RouteTestExit? Exit,
     IReadOnlyList<RouteStep> Steps);
 
 /// <summary>

@@ -162,7 +162,7 @@ public sealed class ProbeWatch : BackgroundService
         }
     }
 
-    // Lays again the interfaces the host lost, an interface it refused within the wait only when the outbounds changed.
+    // Restores outbound resources, retrying a refused operation within the wait only when the outbounds changed.
     private async Task<bool> MendAsync(IReadOnlyList<OutboundConfig> outbounds, bool fresh, DateTimeOffset now,
         CancellationToken ct)
     {
@@ -176,7 +176,6 @@ public sealed class ProbeWatch : BackgroundService
 
             try
             {
-                var gone = !_host.State(outbound).HasLink;
                 var laid = await _host.MendAsync(outbound, ct).ConfigureAwait(false);
                 _resting.Remove(outbound.Name);
                 if (!laid)
@@ -185,19 +184,12 @@ public sealed class ProbeWatch : BackgroundService
                 }
 
                 mended = true;
-                if (gone)
-                {
-                    _logger.LogWarning("the resources of '{Outbound}' were missing and are applied again", outbound.Name);
-                }
-                else
-                {
-                    _logger.LogWarning("the interface of '{Outbound}' was down and is up again", outbound.Name);
-                }
+                _logger.LogWarning("the network resources of '{Outbound}' were restored", outbound.Name);
             }
             catch (Exception ex) when (ex is HostNetworkException or SocketException)
             {
                 _resting[outbound.Name] = now + ConfigWatch.Retry;
-                _logger.LogWarning(ex, "the interface of '{Outbound}' did not come up", outbound.Name);
+                _logger.LogWarning(ex, "the network resources of '{Outbound}' could not be restored", outbound.Name);
             }
         }
 

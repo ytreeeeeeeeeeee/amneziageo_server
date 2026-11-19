@@ -472,6 +472,39 @@ public sealed class LocalOutboundEntity : OutboundEntity
 }
 
 /// <summary>
+/// Settings for an existing interface, stored separately from AWG settings.
+/// </summary>
+public sealed class InterfaceOutboundEntity : OutboundEntity
+{
+    public string InterfaceName { get; set; } = string.Empty;
+    public bool Ipv4 { get; set; }
+    public bool Ipv6 { get; set; }
+    public string Gateway4 { get; set; } = string.Empty;
+    public string Gateway6 { get; set; } = string.Empty;
+
+    protected override OutboundConfig Settings() => new InterfaceOutboundConfig
+    {
+        Name = Name, Device = InterfaceName, Ipv4 = Ipv4, Ipv6 = Ipv6,
+        Gateway4 = Gateway4, Gateway6 = Gateway6,
+    };
+
+    public override void Update(OutboundConfig outbound)
+    {
+        if (outbound is not InterfaceOutboundConfig settings)
+        {
+            throw new InvalidOperationException("the interface row requires interface settings");
+        }
+
+        base.Update(outbound);
+        InterfaceName = settings.Device;
+        Ipv4 = settings.Ipv4;
+        Ipv6 = settings.Ipv6;
+        Gateway4 = settings.Gateway4;
+        Gateway6 = settings.Gateway6;
+    }
+}
+
+/// <summary>
 /// AmneziaWG-only settings, stored separately from the common outbound row.
 /// </summary>
 public sealed class AwgOutboundEntity : OutboundEntity, IObfuscated

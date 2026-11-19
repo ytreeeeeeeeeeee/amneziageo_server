@@ -19,6 +19,21 @@ public sealed record RouteExit(string Strategy, IReadOnlyList<uint> Marks)
     /// </summary>
     public uint Seed { get; init; }
 
+    /// <summary>Family-specific choices, null when both families use Marks.</summary>
+    public IReadOnlyList<uint>? Ipv4Marks { get; init; }
+    public IReadOnlyList<uint>? Ipv6Marks { get; init; }
+
+    public bool FamiliesDiffer => !Marks.SequenceEqual(Ipv4Marks ?? Marks)
+        || !Marks.SequenceEqual(Ipv6Marks ?? Marks);
+
+    /// <summary>Returns only the ways that can carry the packet's address family.</summary>
+    public RouteExit ForFamily(bool six) => this with
+    {
+        Marks = (six ? Ipv6Marks : Ipv4Marks) ?? Marks,
+        Ipv4Marks = null,
+        Ipv6Marks = null,
+    };
+
     /// <summary>
     /// The mark the traffic carries when there is one to carry.
     /// </summary>

@@ -2,7 +2,7 @@
 
 An outbound is a way traffic leaves the host: through the uplink of the host itself, through an
 AmneziaWG tunnel the host holds as a client of another server, or through such a tunnel carried inside a
-websocket to a wstunnel proxy. Every outbound carries a mark of its own;
+websocket to a wstunnel proxy, or through an existing interface configured outside the service. Every outbound carries a mark of its own;
 a packet marked with it is routed out through that outbound. The panel keeps the outbounds in SQLite and
 puts them on the host through the `ip` and `nft` tools.
 
@@ -32,10 +32,65 @@ caller without a fresh login is refused. Keys are answered only to a caller that
 | Kind | Carries |
 |---|---|
 | `local` | the uplink of the host, no interface of its own |
+| `interface` | an existing interface, with explicitly selected IPv4/IPv6 support and optional gateways |
 | `wg` | an AmneziaWG interface the host raises as a client of another server |
 | `ws` | the same interface, with its UDP carried inside a websocket to a wstunnel proxy |
 
 A fresh database is seeded with one `local` outbound named `direct`.
+
+## Through an existing interface
+
+Choose **Existing interface** in the channel form, or send `kind: "interface"` to the ordinary
+outbound routes. The logical outbound name can differ from `interfaceName`. Both `ipv4` and `ipv6`
+must be present in a request, and at least one must be true. `gateway4` and `gateway6` are optional;
+an empty gateway installs a default route directly through the device. A gateway must be a unicast
+address of an enabled family. Gateways are normalized before storage and application; for example,
+`[fe80::1]` becomes `fe80::1`. Zone suffixes such as `%2` or `%eth0` are rejected: select the
+device through `interfaceName` and enter the gateway address without a zone. Invalid addresses are
+rejected. DNS and probe addresses must also belong to an enabled family.
+
+```json
+{
+  "kind": "interface",
+  "name": "ams-interface",
+  "interfaceName": "tt-ams",
+  "ipv4": true,
+  "ipv6": false,
+  "gateway4": "",
+  "gateway6": "",
+  "isEnabled": true,
+  "closePrivate": true,
+  "dns": ["1.1.1.1"],
+  "probe": "1.1.1.1",
+  "probeEvery": 30
+}
+```
+
+The device must already exist and be up. The driver never creates, removes or reconfigures it:
+addresses, MTU and existing routes outside the outbound's allocated table remain unchanged.
+It reconciles only its own routing table and policy rules. Disabling or deleting the outbound
+removes those entries while preserving the device. A missing or down device makes the outbound
+unavailable; the background watch retries when it returns.
+Switching between a managed AWG outbound and this type on the same device is refused before the
+API saves the change: withdrawing the managed type would otherwise delete the device being reused.
+Select a different device for such a type change.
+An interface referenced by a managed outbound remains reserved in the database even when that outbound
+is disabled: its later cleanup or startup must not delete a device reused by an external outbound.
+
+Unsupported families get an unreachable default route, so marked packets cannot fall through to
+the host's main table. Routing rules, priority/round/sticky balancers, the route tester and DNS
+upstream selection use only members supporting the packet or name server's address family.
+If none supports the family, traffic is held rather than sent through another route.
+
+For externally managed interfaces, NAT, TCP MSS and private-network restrictions match the outbound
+mark as well as the device. Two such outbounds can share a device with different private-network
+settings. These entries do not install the AWG-wide ingress drop rules on an existing interface.
+Its other firewall policies remain the responsibility of the interface's existing configuration.
+
+Settings are stored in the separate `InterfaceOutbounds` table and are included in ordinary database
+backups. It contains the device name, supported families and optional gateways, linked to the common
+outbound row. Probing uses the common `probe` setting.
+Downgrade is refused while interface rows exist, preventing unsupported base rows or data loss.
 
 ## Through a websocket
 
@@ -171,6 +226,8 @@ may share a device; a device held by an owning driver cannot be taken over by an
 Interface cleanup remains the driver's responsibility;
 this contract alone does not register an existing interface as an outbound.
 `LocalOutboundConfig` describes the way out through the host itself; `AwgOutboundConfig` derives from the same contract and adds the server, keys, interface addresses, MTU, keepalive, obfuscation and websocket proxy.
+`InterfaceOutboundConfig` carries the device, supported families and optional gateways. Existing AWG
+and local configurations retain their previous family behavior and wire format.
 `OutboundEntity`, `OutboundRequest`, `OutboundResponse` and `OutboundState` contain only common fields.
 Their AWG counterparts own the protocol fields, including the peer endpoint and handshake diagnostics.
 The common configuration, entity, request and response types are abstract. Local outbounds have their own

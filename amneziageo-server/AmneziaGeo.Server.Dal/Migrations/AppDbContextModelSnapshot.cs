@@ -1574,6 +1574,34 @@ namespace AmneziaGeo.Server.Dal.Migrations
                     b.ToTable("AwgOutbounds", (string)null);
                 });
 
+            modelBuilder.Entity("AmneziaGeo.Server.Dal.InterfaceOutboundEntity", b =>
+                {
+                    b.HasBaseType("AmneziaGeo.Server.Dal.OutboundEntity");
+
+                    b.Property<string>("Gateway4")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Gateway6")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("InterfaceName")
+                        .IsRequired()
+                        .HasMaxLength(15)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Ipv4")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("Ipv6")
+                        .HasColumnType("INTEGER");
+
+                    b.ToTable("InterfaceOutbounds", (string)null);
+                });
+
             modelBuilder.Entity("AmneziaGeo.Server.Dal.LocalOutboundEntity", b =>
                 {
                     b.HasBaseType("AmneziaGeo.Server.Dal.OutboundEntity");
@@ -1677,6 +1705,15 @@ namespace AmneziaGeo.Server.Dal.Migrations
                     b.HasOne("AmneziaGeo.Server.Dal.OutboundEntity", null)
                         .WithOne()
                         .HasForeignKey("AmneziaGeo.Server.Dal.AwgOutboundEntity", "Id")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("AmneziaGeo.Server.Dal.InterfaceOutboundEntity", b =>
+                {
+                    b.HasOne("AmneziaGeo.Server.Dal.OutboundEntity", null)
+                        .WithOne()
+                        .HasForeignKey("AmneziaGeo.Server.Dal.InterfaceOutboundEntity", "Id")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

@@ -38,7 +38,8 @@ export function OutboundRemove() {
       <div className={`border-alarm-line p-4 ${card}`}>
         <div className="text-[13px] font-semibold text-alarm">{t("action.forever")}</div>
         <div className="mt-1 text-[13px] text-muted">
-          {held.kind === "local" ? t("outbounds.kindLocal") : `${held.host}:${held.port}`}
+          {held.kind === "local" ? t("outbounds.kindLocal") : held.kind === "interface"
+            ? held.interfaceName : `${held.host}:${held.port}`}
         </div>
         <WayHolders name={held.name} />
       </div>

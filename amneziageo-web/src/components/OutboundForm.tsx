@@ -7,6 +7,7 @@ import type { OutboundDraftBase } from "@/api/outboundContracts"
 import type { OutboundDraft, OutboundKind } from "@/api/outbounds"
 import { WayUse } from "@/components/Holders"
 import { AwgOutboundFields } from "@/components/AwgOutboundFields"
+import { InterfaceOutboundFields } from "@/components/InterfaceOutboundFields"
 import { Count, Line, Part, Switch } from "@/components/fields"
 import { danger, field, footer, label, primary, secondary } from "@/components/styles"
 import { useText } from "@/i18n"
@@ -42,7 +43,7 @@ export function OutboundForm({
     drafts: Partial<Record<OutboundKind, HeldDraft>>
   }>(() => ({
     draft: start,
-    publicKey: source !== undefined && source.kind !== "local" ? source.publicKey : "",
+    publicKey: source !== undefined && (source.kind === "wg" || source.kind === "ws") ? source.publicKey : "",
     drafts: {},
   }))
   const { draft, publicKey } = form
@@ -99,7 +100,7 @@ export function OutboundForm({
       )
       const fresh = draftOf(response.data)
 
-      switchDraft(fresh, response.data.kind !== "local" ? response.data.publicKey : "")
+      switchDraft(fresh, response.data.kind === "wg" || response.data.kind === "ws" ? response.data.publicKey : "")
       setKindError(null)
     } catch (failure) {
       setKindError(failure)
@@ -137,6 +138,7 @@ export function OutboundForm({
             className={`mt-1 ${field}`}
           >
             <option value="local">{t("outbounds.kindLocal")}</option>
+            <option value="interface">{t("outbounds.kindInterface")}</option>
             <option value="wg">{t("outbounds.kindWg")}</option>
             <option value="ws">{t("outbounds.kindWs")}</option>
           </select>
@@ -168,7 +170,8 @@ export function OutboundForm({
         />
       </Part>
 
-      {draft.kind !== "local" && <AwgOutboundFields
+      {draft.kind === "interface" && <InterfaceOutboundFields draft={draft} setDraft={setDraft} />}
+      {(draft.kind === "wg" || draft.kind === "ws") && <AwgOutboundFields
         draft={draft} setDraft={setDraft}
         publicKey={publicKey} setPublicKey={setPublicKey}
       />}
@@ -190,7 +193,8 @@ export function OutboundForm({
         <button
           type="button"
           onClick={() => onSave(draft)}
-          disabled={!edited || pending || kindPending || draft.name.length === 0}
+          disabled={!edited || pending || kindPending || draft.name.length === 0
+            || (draft.kind === "interface" && (!draft.interfaceName.trim() || (!draft.ipv4 && !draft.ipv6)))}
           className={primary}
         >
           {pending ? t("outbounds.busy") : t("outbounds.save")}

@@ -1,3 +1,4 @@
+using System.Net.Sockets;
 using AmneziaGeo.Server.Awg.Netlink;
 using AmneziaGeo.Server.Routing.Host;
 using AmneziaGeo.Server.Routing.Outbound;
@@ -6,6 +7,96 @@ namespace AmneziaGeo.Server.Tests;
 
 public class IpHostNetworkTests
 {
+    [Theory]
+    [InlineData(0)]
+    [InlineData(254)]
+    [InlineData(255)]
+    public async Task InterfaceRoutingCannotTouchSystemTables(int table)
+    {
+        var tools = new Tools();
+        var network = new IpHostNetwork(tools);
+        await Assert.ThrowsAsync<HostNetworkException>(() => network.ClearRouteAsync(table, CancellationToken.None));
+        await Assert.ThrowsAsync<HostNetworkException>(() => network.DefaultRouteAsync("tt-ams", table,
+            AddressFamily.InterNetwork, "", CancellationToken.None));
+        await Assert.ThrowsAsync<HostNetworkException>(() => network.UnreachableRouteAsync(table,
+            AddressFamily.InterNetworkV6, CancellationToken.None));
+        Assert.Empty(tools.Calls);
+    }
+
+    [Theory]
+    [InlineData(AddressFamily.InterNetwork, "", "ip route add default dev tt-ams table 42601")]
+    [InlineData(AddressFamily.InterNetworkV6, "fe80::1", "ip -6 route add default via fe80::1 onlink dev tt-ams table 42601")]
+    [InlineData(AddressFamily.InterNetwork, "192.0.2.1", "ip route add default via 192.0.2.1 onlink dev tt-ams table 42601")]
+    public async Task DefaultRoutesConfigureOnlyTheRequestedFamily(AddressFamily family, string gateway, string expected)
+    {
+        var tools = Routes("[]", "[]");
+        var network = new IpHostNetwork(tools);
+        Assert.True(await network.DefaultRouteAsync("tt-ams", 42601, family, gateway, CancellationToken.None));
+        Assert.Equal(2, tools.Calls.Count);
+        Assert.Equal(expected, tools.Calls[1]);
+    }
+
+    [Theory]
+    [InlineData(AddressFamily.InterNetwork, "ip route add unreachable default table 42601")]
+    [InlineData(AddressFamily.InterNetworkV6, "ip -6 route add unreachable default table 42601")]
+    public async Task UnreachableRoutesConfigureOnlyTheRequestedFamily(AddressFamily family, string expected)
+    {
+        var tools = Routes("[]", "[]");
+        Assert.True(await new IpHostNetwork(tools).UnreachableRouteAsync(42601, family, CancellationToken.None));
+        Assert.Equal(2, tools.Calls.Count);
+        Assert.Equal(expected, tools.Calls[1]);
+    }
+
+    [Fact]
+    public async Task NonIpFamiliesAreRefusedBeforeCallingTheHost()
+    {
+        var tools = new Tools();
+        var network = new IpHostNetwork(tools);
+        await Assert.ThrowsAsync<HostNetworkException>(() => network.DefaultRouteAsync("tt-ams", 42601,
+            AddressFamily.Unix, "", CancellationToken.None));
+        await Assert.ThrowsAsync<HostNetworkException>(() => network.UnreachableRouteAsync(42601,
+            AddressFamily.Unspecified, CancellationToken.None));
+        Assert.Empty(tools.Calls);
+    }
+
+    [Fact]
+    public async Task MatchingDefaultAndUnreachableRoutesDoNotGenerateEndlessKernelChanges()
+    {
+        var tools = Routes("""[{"table":"42601","dst":"default","dev":"tt-ams","gateway":"192.0.2.1"}]""",
+            """[{"table":42601,"dst":"default","type":"7"}]""");
+        var network = new IpHostNetwork(tools);
+        Assert.False(await network.DefaultRouteAsync("tt-ams", 42601, AddressFamily.InterNetwork,
+            "192.0.2.1", CancellationToken.None));
+        Assert.False(await network.UnreachableRouteAsync(42601, AddressFamily.InterNetworkV6, CancellationToken.None));
+        Assert.Equal(["ip -4 -N -j route show table all", "ip -6 -N -j route show table all"], tools.Calls);
+    }
+
+    [Fact]
+    public async Task ARouteTypeChangeRemovesTheOldRouteBeforeInstallingItsReplacement()
+    {
+        var tools = Routes("""[{"table":"42601","dst":"default","dev":"tt-ams"}]""", "[]");
+        await new IpHostNetwork(tools).UnreachableRouteAsync(42601, AddressFamily.InterNetwork, CancellationToken.None);
+        Assert.True(tools.Calls.IndexOf("ip route flush table 42601")
+            < tools.Calls.IndexOf("ip route add unreachable default table 42601"));
+    }
+
+    [Fact]
+    public async Task FailedRouteCleanupIsReportedSoOwnershipCanBeRetained()
+    {
+        var tools = Routes("""[{"table":"42601","dst":"default","dev":"tt-ams"}]""", "[]");
+        tools.Answers["ip route flush"] = new(1, "", "permission denied");
+        await Assert.ThrowsAsync<HostNetworkException>(() => new IpHostNetwork(tools)
+            .ClearRouteAsync(42601, CancellationToken.None));
+    }
+
+    private static Tools Routes(string four, string six)
+    {
+        var tools = new Tools();
+        tools.Answers["ip -4 -N -j route show table all"] = new(0, four, "");
+        tools.Answers["ip -6 -N -j route show table all"] = new(0, six, "");
+        return tools;
+    }
+
     private const string Carried =
         """[{"ifname":"awgbor","addr_info":[{"family":"inet","local":"10.9.0.2","prefixlen":24,"scope":"global"},{"family":"inet","local":"10.9.0.3","prefixlen":24,"scope":"global"},{"family":"inet6","local":"fd00::2","prefixlen":112,"scope":"global"},{"family":"inet6","local":"fe80::1","prefixlen":64,"scope":"link"}]}]""";
 

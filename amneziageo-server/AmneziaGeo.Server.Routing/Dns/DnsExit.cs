@@ -1,4 +1,5 @@
 using AmneziaGeo.Server.Routing.Balance;
+using System.Net.Sockets;
 using AmneziaGeo.Server.Routing.Outbound;
 using AmneziaGeo.Server.Routing.Route;
 
@@ -12,7 +13,7 @@ public static class DnsExit
     /// <summary>
     /// Returns the way out a question takes, handing the live members of a round balancer out by the turn.
     /// </summary>
-    public static DnsWay Way(DnsSettings settings, RouteWays ways, long turn = 0)
+    public static DnsWay Way(DnsSettings settings, RouteWays ways, long turn = 0, AddressFamily? family = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(ways);
@@ -30,13 +31,18 @@ public static class DnsExit
                 return DnsWay.Closed("outbound-off", $"the outbound '{name}' is turned off");
             }
 
+            if (!Supports(outbound, family))
+            {
+                return DnsWay.Closed("unsupported-ip-family", $"the outbound '{name}' does not support the name server's IP family");
+            }
+
             return ways.IsAlive(name)
                 ? new DnsWay(outbound.Mark, name, null)
                 : new DnsWay(outbound.Mark, name, new DnsFault("outbound-down", $"the outbound '{name}' carries no traffic"));
         }
 
         return ways.Balancer(name) is { } balancer
-            ? Spread(balancer, ways, turn)
+            ? Spread(balancer, ways, turn, family)
             : DnsWay.Closed("unknown-outbound", $"there is no outbound or balancer called '{name}'");
     }
 
@@ -53,7 +59,7 @@ public static class DnsExit
         return ways.Outbound(name) is not null || ways.Balancer(name) is not null;
     }
 
-    private static DnsWay Spread(Balancer balancer, RouteWays ways, long turn)
+    private static DnsWay Spread(Balancer balancer, RouteWays ways, long turn, AddressFamily? family)
     {
         if (!balancer.IsEnabled)
         {
@@ -63,7 +69,7 @@ public static class DnsExit
         var members = balancer.Members
             .Select(ways.Outbound)
             .OfType<OutboundConfig>()
-            .Where(member => member.IsEnabled)
+            .Where(member => member.IsEnabled && Supports(member, family))
             .ToArray();
 
         if (members.Length == 0)
@@ -85,4 +91,11 @@ public static class DnsExit
 
         return new DnsWay(pick.Mark, pick.Name, null);
     }
+
+    private static bool Supports(OutboundConfig outbound, AddressFamily? family) => family switch
+    {
+        AddressFamily.InterNetwork => outbound.SupportsIpv4,
+        AddressFamily.InterNetworkV6 => outbound.SupportsIpv6,
+        _ => true,
+    };
 }

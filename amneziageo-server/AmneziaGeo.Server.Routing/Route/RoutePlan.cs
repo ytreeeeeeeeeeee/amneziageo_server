@@ -212,7 +212,7 @@ public sealed record RoutePlan(IReadOnlyList<RouteLeg> Legs, IReadOnlyList<strin
             }
 
             return ways.IsAlive(name)
-                ? (RouteExit.One(outbound.Mark), null)
+                ? (FamilyExit([outbound], BalanceStrategy.Priority, 0), null)
                 : (RouteExit.None, new RouteFault("outbound-down", $"the outbound '{name}' carries nothing"));
         }
 
@@ -241,11 +241,26 @@ public sealed record RoutePlan(IReadOnlyList<RouteLeg> Legs, IReadOnlyList<strin
             return (RouteExit.None, new RouteFault("no-live-member", message));
         }
 
-        var marks = BalanceStrategy.Spreads(balancer.Strategy)
-            ? members.Select(member => member.Mark).ToArray()
-            : [members[0].Mark];
+        return (FamilyExit(members, balancer.Strategy, balancer.Seed), null);
+    }
 
-        return (new RouteExit(balancer.Strategy, marks) { Seed = balancer.Seed }, null);
+    private static RouteExit FamilyExit(OutboundConfig[] members, string strategy, uint seed)
+    {
+        uint[] Marks(bool six)
+        {
+            var supported = members.Where(one => six ? one.SupportsIpv6 : one.SupportsIpv4);
+            return [.. (BalanceStrategy.Spreads(strategy) ? supported : supported.Take(1)).Select(one => one.Mark)];
+        }
+
+        var four = Marks(false);
+        var six = Marks(true);
+        var union = four.Concat(six).Distinct().ToArray();
+        return new(strategy, union)
+        {
+            Seed = seed,
+            Ipv4Marks = four.SequenceEqual(union) ? null : four,
+            Ipv6Marks = six.SequenceEqual(union) ? null : six,
+        };
     }
 
     private static IEnumerable<string> Family(IReadOnlyList<AwgAllowedIp> ranges, AddressFamily family) =>

@@ -91,6 +91,11 @@ export interface RouteAnswer {
   rule: { id: number; name: string; place: number; action: RuleAction; outbound: string } | null
   exit: { name: string; isGroup: boolean; strategy: string; members: RouteMember[] } | null
   steps: RouteStep[]
+  results?: RouteAddressAnswer[]
+}
+
+export type RouteAddressAnswer = Pick<RouteAnswer, "verdict" | "guard" | "rule" | "exit" | "steps"> & {
+  address: string
 }
 
 export const blockList = -1

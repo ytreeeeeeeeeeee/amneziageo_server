@@ -32,6 +32,10 @@ export function RouteTest() {
   const may = holds(user, scopes.manageRouting)
   const [question, setQuestion] = useState(start)
   const places = new Map((rules.data ?? []).map((one, at) => [one.id, at + 1]))
+  const answer = test.data
+  const answers = answer?.results?.length
+    ? answer.results.map((result) => ({ ...answer, ...result, addresses: [result.address] }))
+    : answer ? [answer] : []
 
   function put(change: Partial<Question>) {
     setQuestion({ ...question, ...change })
@@ -91,7 +95,7 @@ export function RouteTest() {
 
       {test.error !== null && <div className="text-sm text-alarm">{t(complaint(test.error))}</div>}
 
-      {test.data && <Answer answer={test.data} places={places} may={may} t={t} />}
+      {answers.map((one) => <Answer key={one.addresses[0] ?? "unresolved"} answer={one} places={places} may={may} t={t} />)}
     </div>
   )
 }

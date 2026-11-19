@@ -1,3 +1,5 @@
+using System.Net.Sockets;
+
 namespace AmneziaGeo.Server.Routing.Host;
 
 /// <summary>
@@ -39,6 +41,12 @@ public interface IHostNetwork
     /// Puts the way out through an interface into a routing table.
     /// </summary>
     Task RouteAsync(string name, int table, CancellationToken ct);
+
+    /// <summary>Sets a default route through a device and optional gateway for one IP family, telling whether it changed.</summary>
+    Task<bool> DefaultRouteAsync(string name, int table, AddressFamily family, string gateway, CancellationToken ct);
+
+    /// <summary>Sets an unreachable default route for one IP family, telling whether it changed.</summary>
+    Task<bool> UnreachableRouteAsync(int table, AddressFamily family, CancellationToken ct);
 
     /// <summary>
     /// Clears a routing table.

@@ -158,10 +158,95 @@ public sealed class IpHostNetwork : IHostNetwork
     /// </summary>
     public async Task ClearRouteAsync(int table, CancellationToken ct)
     {
-        var number = table.ToString();
-        await Quietly([Ip, "route", "flush", "table", number], ct).ConfigureAwait(false);
-        await Quietly([Ip, "-6", "route", "flush", "table", number], ct).ConfigureAwait(false);
+        OutboundTable(table);
+        foreach (var six in new[] { false, true })
+        {
+            if ((await TableRoutesAsync(table, six, ct).ConfigureAwait(false)).Length > 0)
+            {
+                await RunAsync([Ip, .. Family(six), "route", "flush", "table", table.ToString()], ct)
+                    .ConfigureAwait(false);
+            }
+        }
     }
+
+    /// <inheritdoc/>
+    public Task<bool> DefaultRouteAsync(string name, int table, AddressFamily family, string gateway, CancellationToken ct) =>
+        SetDefaultRouteAsync(name, table, family, gateway, ct);
+
+    /// <inheritdoc/>
+    public Task<bool> UnreachableRouteAsync(int table, AddressFamily family, CancellationToken ct) =>
+        SetDefaultRouteAsync(null, table, family, "", ct);
+
+    private async Task<bool> SetDefaultRouteAsync(string? name, int table, AddressFamily family, string gateway,
+        CancellationToken ct)
+    {
+        OutboundTable(table);
+        if (family is not (AddressFamily.InterNetwork or AddressFamily.InterNetworkV6))
+        {
+            throw new HostNetworkException("a route requires IPv4 or IPv6");
+        }
+
+        var six = family == AddressFamily.InterNetworkV6;
+        var held = await TableRoutesAsync(table, six, ct).ConfigureAwait(false);
+        if (held.Length == 1 && Field(held[0], "dst") == "default"
+            && (name is not null
+                ? Field(held[0], "dev") == name && SameAddress(Field(held[0], "gateway"), gateway)
+                    && Field(held[0], "type") is "" or "1"
+                : Field(held[0], "type") is "7" or "unreachable"))
+        {
+            return false;
+        }
+
+        if (held.Length > 0)
+        {
+            await RunAsync([Ip, .. Family(six), "route", "flush", "table", table.ToString()], ct)
+                .ConfigureAwait(false);
+        }
+
+        string[] next = gateway.Length == 0 ? [] : ["via", gateway, "onlink"];
+        string[] route = name is not null ? ["default", .. next, "dev", name] : ["unreachable", "default"];
+        await RunAsync([Ip, .. Family(six), "route", "add", .. route, "table", table.ToString()], ct)
+            .ConfigureAwait(false);
+        return true;
+    }
+
+    private async Task<JsonElement[]> TableRoutesAsync(int table, bool six, CancellationToken ct)
+    {
+        var result = await _commands.RunAsync(Ip, [six ? "-6" : "-4", "-N", "-j", "route", "show", "table", "all"],
+            null, ct).ConfigureAwait(false);
+        if (!result.IsOk)
+        {
+            throw new HostNetworkException($"the routing tables did not read: {result.Complaint}");
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(result.Output);
+            return [.. document.RootElement.EnumerateArray()
+                .Where(route => route.TryGetProperty("table", out var number) && RuleNumber(number) == (uint)table)
+                .Select(route => route.Clone())];
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException or OverflowException)
+        {
+            throw new HostNetworkException("the host returned an unreadable routing table", ex);
+        }
+    }
+
+    private static string[] Family(bool six) => six ? ["-6"] : [];
+
+    private static void OutboundTable(int table)
+    {
+        if (table < OutboundRules.FirstTable || table > OutboundRules.TableOf(OutboundRules.LastMark, true))
+        {
+            throw new HostNetworkException("only allocated outbound routing tables can be changed or cleared");
+        }
+    }
+
+    private static string Field(JsonElement route, string name) =>
+        route.TryGetProperty(name, out var value) ? value.ToString() : "";
+
+    private static bool SameAddress(string left, string right) => left == right
+        || (IPAddress.TryParse(left, out var one) && IPAddress.TryParse(right, out var other) && one.Equals(other));
 
     /// <summary>
     /// Adds or removes the rule that sends a marked packet into a routing table, telling whether it had to.

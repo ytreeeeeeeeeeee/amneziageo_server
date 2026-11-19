@@ -173,6 +173,13 @@ the host when the resolver is off. The client is a client of the panel, whose ad
 traffic then carries, or a bare address, whose interface is the configuration its range belongs to. The
 protocol is `tcp` or `udp`, both ports may be left out.
 
+Every resolved destination is tested independently against the same routing plan. The `results` array
+contains an `address`, verdict, guard, rule, exit and steps for each address. It is sorted by family
+(IPv4 first) and then by address text, so DNS answer order does not change the output. The panel displays
+one result per address: a working IPv4 route does not hide blocked IPv6 traffic, or the reverse.
+The existing top-level verdict/rule/exit/steps fields describe the first result for compatibility;
+`addresses` still lists all resolved addresses. An unresolved name has an empty `results` array.
+
 The guards of the resolver come first, while a rule on the host matches by name and no names are read out of the
 connections: a client of such a rule is refused port 853 and port 443 of a known name server; the tester does not
 know a client the guards let go. Next comes the resolver itself: while it answers, every question on port

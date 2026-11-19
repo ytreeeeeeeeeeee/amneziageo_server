@@ -196,6 +196,14 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, long>
 
         builder.Entity<LocalOutboundEntity>().ToTable("LocalOutbounds");
 
+        builder.Entity<InterfaceOutboundEntity>(entity =>
+        {
+            entity.ToTable("InterfaceOutbounds");
+            entity.Property(outbound => outbound.InterfaceName).HasMaxLength(OutboundRules.MaxNameLength);
+            entity.Property(outbound => outbound.Gateway4).HasMaxLength(64);
+            entity.Property(outbound => outbound.Gateway6).HasMaxLength(64);
+        });
+
         builder.Entity<AwgOutboundEntity>(entity =>
         {
             entity.ToTable("AwgOutbounds");

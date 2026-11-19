@@ -8,11 +8,13 @@ public class OutboundDriverTests
 {
     [Theory]
     [InlineData("local", false)]
+    [InlineData("interface", false)]
     [InlineData("wg", true)]
     [InlineData("ws", true)]
     public void EveryExistingKindHasOneDriver(string kind, bool awg)
     {
-        IOutboundDriver[] drivers = [new LocalOutboundDriver(), new AwgOutboundDriver(new Ledger(), new Kernel())];
+        IOutboundDriver[] drivers = [new LocalOutboundDriver(), new InterfaceOutboundDriver(new Ledger()),
+            new AwgOutboundDriver(new Ledger(), new Kernel())];
 
         var driver = Assert.Single(drivers, one => one.Supports(kind));
 

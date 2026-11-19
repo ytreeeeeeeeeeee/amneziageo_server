@@ -58,7 +58,7 @@ public static partial class OutboundRules
         ArgumentNullException.ThrowIfNull(outbound);
 
         return CheckName(outbound.Name)
-               ?? (outbound.UsesInterface ? CheckName(outbound.InterfaceName) : null)
+               ?? (outbound.UsesInterface ? CheckInterfaceName(outbound.InterfaceName) : null)
                ?? CheckKind(outbound.Kind)
             ?? CheckMark(outbound.Mark)
             ?? CheckTable(outbound)
@@ -74,6 +74,13 @@ public static partial class OutboundRules
         !string.IsNullOrEmpty(name) && name.Length <= MaxNameLength && NameShape().IsMatch(name)
             ? null
             : new("bad-interface-name", "the name must be a lowercase interface name of at most 15 characters");
+
+    /// <summary>Checks a Linux device name without restricting it to the outbound naming convention.</summary>
+    public static OutboundFault? CheckInterfaceName(string? name) =>
+        !string.IsNullOrEmpty(name) && name.Length <= MaxNameLength && name is not "." and not ".."
+        && DeviceShape().IsMatch(name)
+            ? null
+            : new("bad-interface-name", "the interface name must contain at most 15 letters, digits, dots, dashes or underscores");
 
     /// <summary>
     /// Returns why the kind of an outbound is unusable, or null when it holds.
@@ -134,6 +141,9 @@ public static partial class OutboundRules
 
     [GeneratedRegex("^[a-z][a-z0-9_-]*$")]
     private static partial Regex NameShape();
+
+    [GeneratedRegex("^[a-zA-Z0-9_.-]+$")]
+    private static partial Regex DeviceShape();
 
     private static OutboundFault? CheckMark(uint mark) =>
         mark is >= FirstMark and <= LastMark

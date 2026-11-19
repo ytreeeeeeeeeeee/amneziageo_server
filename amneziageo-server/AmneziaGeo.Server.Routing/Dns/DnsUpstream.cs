@@ -44,6 +44,7 @@ public sealed class DnsUpstream : IDnsUpstream, IDisposable
     private readonly TimeSpan _wait;
 
     private readonly Func<uint?> _way;
+    private readonly Func<AddressFamily, uint?>? _familyWay;
 
     private readonly TimeProvider _time;
 
@@ -65,13 +66,15 @@ public sealed class DnsUpstream : IDnsUpstream, IDisposable
         TimeSpan wait,
         Func<uint?>? way = null,
         X509Certificate2Collection? roots = null,
-        TimeProvider? time = null)
+        TimeProvider? time = null,
+        Func<AddressFamily, uint?>? familyWay = null)
     {
         ArgumentNullException.ThrowIfNull(servers);
 
         _servers = [.. servers.Select(one => DnsRules.Server(one, out var read) ? new Server(read) : null).OfType<Server>()];
         _wait = wait;
         _way = way ?? (() => 0u);
+        _familyWay = familyWay;
         _time = time ?? TimeProvider.System;
         _tls = new DnsTlsLinks(roots, _time);
         _https = new DnsHttpsLinks(roots);
@@ -85,7 +88,8 @@ public sealed class DnsUpstream : IDnsUpstream, IDisposable
     /// <inheritdoc/>
     public async Task<byte[]?> AskAsync(ReadOnlyMemory<byte> question, bool stream, CancellationToken ct)
     {
-        if (_way() is not { } mark)
+        var mark = _familyWay is null ? _way() : null;
+        if (_familyWay is null && mark is null)
         {
             return null;
         }
@@ -94,7 +98,12 @@ public sealed class DnsUpstream : IDnsUpstream, IDisposable
         Recall(order, question, stream, mark);
         foreach (var server in order)
         {
-            var answer = await OneAsync(server, question, stream, mark, ct).ConfigureAwait(false);
+            if (Mark(server, mark) is not { } selected)
+            {
+                continue;
+            }
+
+            var answer = await OneAsync(server, question, stream, selected, ct).ConfigureAwait(false);
             if (answer is not null)
             {
                 Interlocked.Exchange(ref _missed, 0);
@@ -126,18 +135,24 @@ public sealed class DnsUpstream : IDnsUpstream, IDisposable
         [.. _servers.Where(server => !server.Silent), .. _servers.Where(server => server.Silent)];
 
     // Asks a silent name server that has rested the same question aside, so no client waits for it to come back.
-    private void Recall(List<Server> order, ReadOnlyMemory<byte> question, bool stream, uint mark)
+    private void Recall(List<Server> order, ReadOnlyMemory<byte> question, bool stream, uint? mark)
     {
         if (order.Count == 0 || order[0].Silent)
         {
             return;
         }
 
-        foreach (var server in order.Where(one => one.Silent && one.Rested(_time) && one.Claim()))
+        foreach (var server in order.Where(one => one.Silent && one.Rested(_time)))
         {
-            _ = AsideAsync(server, question.ToArray(), stream, mark);
+            if (Mark(server, mark) is { } selected && server.Claim())
+            {
+                _ = AsideAsync(server, question.ToArray(), stream, selected);
+            }
         }
     }
+
+    private uint? Mark(Server server, uint? common) => _familyWay is { } pick
+        ? pick(server.Address.Point.Address.AddressFamily) : common;
 
     private async Task AsideAsync(Server server, byte[] question, bool stream, uint mark)
     {

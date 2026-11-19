@@ -38,6 +38,11 @@ for a token like any other route. The shapes of the answers are not in it; the p
 
 ## The routes by area
 
+Outbounds support `local`, `wg`, `ws` and `interface`. The existing-interface request explicitly
+specifies `interfaceName`, `ipv4`, `ipv6`, and optionally `gateway4`/`gateway6`.
+See [existing interface outbounds](outbounds.md#through-an-existing-interface) for the JSON contract
+and the interface lifecycle.
+
 | Area | Page |
 |---|---|
 | accounts, roles, tokens | [auth.md](auth.md) |

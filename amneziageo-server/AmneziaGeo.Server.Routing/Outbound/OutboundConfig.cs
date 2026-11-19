@@ -35,6 +35,12 @@ public abstract record OutboundConfig
     /// </summary>
     public virtual bool OwnsInterface => false;
 
+    /// <summary>Whether this way out carries IPv4 traffic.</summary>
+    public virtual bool SupportsIpv4 => true;
+
+    /// <summary>Whether this way out carries IPv6 traffic.</summary>
+    public virtual bool SupportsIpv6 => true;
+
     /// <summary>
     /// Checks the settings specific to this implementation.
     /// </summary>

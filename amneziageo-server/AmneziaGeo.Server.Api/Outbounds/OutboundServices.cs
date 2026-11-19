@@ -50,8 +50,10 @@ public static class OutboundServices
         services.AddSingleton<IProbeLink, ProbeLink>();
         services.AddSingleton<ProbeRunner>();
         services.AddSingleton<IOutboundDriver, LocalOutboundDriver>();
+        services.AddSingleton<IOutboundDriver, InterfaceOutboundDriver>();
         services.AddSingleton<IOutboundDriver, AwgOutboundDriver>();
         services.AddSingleton<IOutboundResponseFactory, LocalOutboundResponses>();
+        services.AddSingleton<IOutboundResponseFactory, InterfaceOutboundResponses>();
         services.AddSingleton<IOutboundResponseFactory, AwgOutboundResponses>();
         services.AddSingleton<OutboundAnswers>();
         services.ConfigureHttpJsonOptions(options => OutboundJson.Configure(options.SerializerOptions));

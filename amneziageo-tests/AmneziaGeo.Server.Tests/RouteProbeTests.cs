@@ -39,6 +39,44 @@ public class RouteProbeTests
         Assert.Equal(new RouteStep(1, "r1", RouteProbe.Match, "range", "77.88.8.8"), Assert.Single(verdict.Steps));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void TheMatchedAddressDecidesTheExitFamilyRegardlessOfDnsOrder(bool learned)
+    {
+        var four = new InterfaceOutboundConfig
+        {
+            Name = "four", Device = "tt-ams", Ipv4 = true, Mark = OutboundRules.FirstMark,
+            Table = OutboundRules.FirstTable,
+        };
+        var rule = Rule(1, learned ? "example.com" : "192.0.2.0/24") with { Outbound = four.Name };
+        var plan = RoutePlan.Build([rule], [four], Index(), ["awg1"]);
+        var target = IPAddress.Parse("192.0.2.1");
+        var other = IPAddress.Parse("2001:db8::1");
+        foreach (var addresses in new[] { new[] { target, other }, new[] { other, target } })
+        {
+            var verdict = RouteProbe.Test(plan, new RouteQuery { Addresses = addresses }, (_, address) => learned && address.Equals(target));
+            Assert.Equal(RouteProbe.Out, verdict.Verdict);
+            Assert.Equal(four.Mark, verdict.Leg!.Mark);
+            Assert.Equal(target.ToString(), verdict.Steps.Last().Detail);
+        }
+        Assert.Equal(RouteProbe.Host, Test(plan, new RouteQuery { Addresses = [other] }).Verdict);
+    }
+
+    [Fact]
+    public void EachFamilyOfADomainGetsItsOwnDecision()
+    {
+        var four = new InterfaceOutboundConfig
+        {
+            Name = "four", Device = "tt-ams", Ipv4 = true, Mark = OutboundRules.FirstMark,
+            Table = OutboundRules.FirstTable,
+        };
+        var plan = RoutePlan.Build([Rule(1, "example.com") with { Outbound = four.Name }], [four], Index(), ["awg1"]);
+        var query = new RouteQuery { Name = "example.com" };
+        Assert.Equal(RouteProbe.Out, Test(plan, query with { Addresses = [IPAddress.Parse("192.0.2.1")] }).Verdict);
+        Assert.Equal(RouteProbe.Held, Test(plan, query with { Addresses = [IPAddress.Parse("2001:db8::1")] }).Verdict);
+    }
+
     [Fact]
     public void ANameUnderTheDomainsOfARuleIsTakenByIt()
     {
