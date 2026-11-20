@@ -4,7 +4,7 @@
 
 AmneziaGeo Server is a panel for an AmneziaWG server on Linux. It raises the tunnel interfaces in the kernel itself, keeps the clients and hands them their configurations as a file, a QR code, a link and a subscription, counts their traffic, and can send that traffic further: by geo databases and domains through other servers, through the host itself or into a block. It runs on Debian and Ubuntu with the `amneziawg` kernel module, as a service or in Docker, on amd64 and arm64.
 
-**[Download](https://github.com/bor-project/amneziageo_server/releases) · [Documentation](https://bor-project.github.io/amneziageo_server/) · [Client](https://github.com/bor-project/amneziageo)**
+**[Download](https://github.com/ytreeeeeeeeeeee/amneziageo_server/releases) · [Documentation](https://bor-project.github.io/amneziageo_server/) · [Client](https://github.com/ytreeeeeeeeeeee/amneziageo)**
 
 ## Features
 
@@ -15,11 +15,11 @@ AmneziaGeo Server is a panel for an AmneziaWG server on Linux. It raises the tun
 - The tunnel inside WebSocket on the TCP port of the interface, for networks that let only web traffic through.
 - Updates from the panel with a rollback on failure, database backups and the console menu `amneziageo-server` on the host.
 
-Installation [as a service](https://bor-project.github.io/amneziageo_server/service/) or [in Docker](https://bor-project.github.io/amneziageo_server/docker/), setup and maintenance are on the **[documentation site](https://bor-project.github.io/amneziageo_server/)**.
+Install this fork [as a service](docs/install.md) or [in Docker](docs/docker.md).
 
 ## Client
 
-The **[AmneziaGeo client](https://github.com/bor-project/amneziageo)** for Windows, Linux and Android reads the geo sources, routing lists, subscription address and speed test of the server by itself: see its **[documentation site](https://bor-project.github.io/amneziageo/)**. Any other AmneziaWG app works with the server as with a plain AmneziaWG server.
+The **[AmneziaGeo client](https://github.com/ytreeeeeeeeeeee/amneziageo)** for Windows, Linux and Android reads the geo sources, routing lists, subscription address and speed test of the server by itself: see its **[documentation site](https://bor-project.github.io/amneziageo/)**. Any other AmneziaWG app works with the server as with a plain AmneziaWG server.
 
 ## For developers
 

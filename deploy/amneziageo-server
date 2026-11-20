@@ -3,15 +3,15 @@
 # AMNEZIAGEO_KIND, AMNEZIAGEO_CLI, AMNEZIAGEO_DATA, AMNEZIAGEO_UNIT and AMNEZIAGEO_DOCKER_DIR move it onto another layout.
 set -uo pipefail
 
-repo=bor-project/amneziageo_server
-image=ghcr.io/bor-project/amneziageo-server
+repo=ytreeeeeeeeeeee/amneziageo_server
+image=ghcr.io/ytreeeeeeeeeeee/amneziageo-server
 self=/usr/local/bin/amneziageo-server
 base=/opt/amneziageo-server
 etc=/etc/amneziageo-server
 data=${AMNEZIAGEO_DATA:-/var/lib/amneziageo-server}
 unit=${AMNEZIAGEO_UNIT:-amneziageo-server}
 docker_dir=${AMNEZIAGEO_DOCKER_DIR:-/opt/amneziageo-docker}
-updates_image=ghcr.io/bor-project/amneziageo-updates
+updates_image=ghcr.io/ytreeeeeeeeeeee/amneziageo-updates
 updates_dir=${AMNEZIAGEO_UPDATES_DIR:-/opt/amneziageo-updates}
 updates_data=/var/lib/amneziageo-updates
 updates_etc=/etc/amneziageo-updates
@@ -40,8 +40,8 @@ spinning=
 kept_tty=
 ppa_key=75C9DD72C799870E310542E24166F2C257290828
 release_key='-----BEGIN PUBLIC KEY-----
-MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEzgZ6s+M0wvE0HMsFuPhwk7cZsCSY
-vbaWhP248NSthVEmlp9mRRjOf9zIFsIZ5P4mM1ETGo+l/Gb+S+7TcwVUew==
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE3N4sNJRbDe6FKfWwWKQb3lat8Gfe
+wMlBlY1vCoI/6vfjDj/wABdlK/64T19FBkaDK9asiH8ZSckPrMPtYNDCGw==
 -----END PUBLIC KEY-----'
 
 if [ -t 1 ]; then

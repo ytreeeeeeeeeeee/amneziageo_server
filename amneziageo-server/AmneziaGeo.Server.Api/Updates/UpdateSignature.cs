@@ -12,8 +12,8 @@ public static class UpdateSignature
     /// </summary>
     public const string Published = """
         -----BEGIN PUBLIC KEY-----
-        MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEzgZ6s+M0wvE0HMsFuPhwk7cZsCSY
-        vbaWhP248NSthVEmlp9mRRjOf9zIFsIZ5P4mM1ETGo+l/Gb+S+7TcwVUew==
+        MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE3N4sNJRbDe6FKfWwWKQb3lat8Gfe
+        wMlBlY1vCoI/6vfjDj/wABdlK/64T19FBkaDK9asiH8ZSckPrMPtYNDCGw==
         -----END PUBLIC KEY-----
         """;
 

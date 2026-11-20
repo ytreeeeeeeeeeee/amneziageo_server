@@ -36,7 +36,7 @@ ufw, занятые порты с именами служб, интерфейс�
 - проверяет панель, сертификат и интерфейс (шаг 8) и печатает адрес панели, логин и временный пароль.
 
 ```bash
-curl -fsSL https://github.com/bor-project/amneziageo_server/releases/latest/download/amneziageo-server \
+curl -fsSL https://github.com/ytreeeeeeeeeeee/amneziageo_server/releases/latest/download/amneziageo-server \
   -o /usr/local/bin/amneziageo-server
 chmod 755 /usr/local/bin/amneziageo-server
 amneziageo-server install
@@ -169,8 +169,8 @@ VER=0.0.3.0
 ARCH=x64
 PKG=amneziageo-server-$VER-linux-$ARCH.tar.gz
 cd /root
-curl -fLO https://github.com/bor-project/amneziageo_server/releases/download/$TAG/$PKG
-curl -fLO https://github.com/bor-project/amneziageo_server/releases/download/$TAG/update.json
+curl -fLO https://github.com/ytreeeeeeeeeeee/amneziageo_server/releases/download/$TAG/$PKG
+curl -fLO https://github.com/ytreeeeeeeeeeee/amneziageo_server/releases/download/$TAG/update.json
 want=$(grep -A3 "\"$PKG\"" update.json | sed -n 's/.*"sha256": "\([0-9a-f]*\)".*/\1/p')
 echo "$want  $PKG" | sha256sum -c -
 ```

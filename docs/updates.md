@@ -5,13 +5,11 @@ or in a container.
 
 ## Where the releases come from
 
-A release is a tag `vX.Y.Z.W` on a commit of the branch `master` of `bor-project/amneziageo_server`; a tag outside
-`master` builds nothing. The workflow `.github/workflows/release.yml` builds it: the packages for x64 and arm64,
-beside each package its files packed one by one (`.pack`) and their list (`.files`), the image
-`ghcr.io/bor-project/amneziageo-server` for both, and `update.json`, which names the version, the image pinned to
-its digest, the digest of every package and of its list.
-`update.json.sig` signs the manifest with the key of the releases. A tag whose fourth number is above zero, or
-that carries a suffix, makes a prerelease.
+The workflow `.github/workflows/release.yml` publishes releases of `ytreeeeeeeeeeee/amneziageo_server`.
+See [release channels](release-channels.md) for the required branch and tag. The workflow builds packages
+for x64 and arm64, with a file pack and list beside each panel package, and publishes both architectures of the
+server and Update Server images under `ghcr.io/ytreeeeeeeeeeee`. The signed `update.json` names the version,
+the images pinned by digest, and the hashes of packages and file lists.
 
 A minute after it starts and every 12 hours after that, the panel asks GitHub for the latest release, or for the
 newest five when it takes the prereleases as well, takes the newest one of its channel that carries `update.json`
@@ -26,7 +24,7 @@ how many requests; the next look starts over. The console menu asks GitHub the s
 |---|---|---|
 | `Update__Channel` | `stable` | `test` takes the prereleases as well |
 | `Update__CheckHours` | `12` | how often the releases are looked over; `0` leaves it to the panel |
-| `Update__Repository` | `bor-project/amneziageo_server` | whose releases are read |
+| `Update__Repository` | `ytreeeeeeeeeeee/amneziageo_server` | whose releases are read |
 | `Update__Manifest` | | the address of an `update.json` read in place of the releases, its signature beside it with `.sig` |
 | `Update__Key` | | a file with the public key in PEM, in place of the one the panel carries |
 | `Update__Directory` | `update` beside the database | the downloads, the logs and the record of the last update |
@@ -138,6 +136,7 @@ openssl ecparam -name prime256v1 -genkey -noout -out update-signing.pem
 openssl ec -in update-signing.pem -pubout -out update-key.pem
 ```
 
-`update-signing.pem` goes into the secret `UPDATE_SIGNING_KEY` of the repository and nowhere else,
-`update-key.pem` into `UpdateSignature.Published`. A panel built without the key names `update-no-key` and
-offers no release.
+Before publishing the first server release of the fork, add the private PEM as its GitHub Actions secret
+`UPDATE_SIGNING_KEY`. Put the matching public PEM in `UpdateSignature.Published` and in `release_key`
+in `deploy/amneziageo-server`. Keep the same signing key for subsequent releases so installed servers can
+verify them. `Update__Key` can set the panel's public key at runtime.

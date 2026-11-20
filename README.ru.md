@@ -4,7 +4,7 @@
 
 Сервер AmneziaGeo - панель управления сервером AmneziaWG на Linux. Она сама поднимает интерфейсы туннеля в ядре, ведёт клиентов и выдаёт им конфигурации файлом, QR-кодом, ссылкой и подпиской, считает трафик, а трафик клиентов умеет направлять дальше: по гео-базам и доменам через другие серверы, через сам хост или в блок. Работает на Debian и Ubuntu с модулем `amneziawg` в ядре, службой или в Docker, на amd64 и arm64.
 
-**[Скачать](https://github.com/bor-project/amneziageo_server/releases) · [Документация](https://bor-project.github.io/amneziageo_server/index.ru.html) · [Клиент](https://github.com/bor-project/amneziageo/blob/master/README.ru.md)**
+**[Скачать](https://github.com/ytreeeeeeeeeeee/amneziageo_server/releases) · [Документация](https://bor-project.github.io/amneziageo_server/index.ru.html) · [Клиент](https://github.com/ytreeeeeeeeeeee/amneziageo/blob/master/README.ru.md)**
 
 ## Возможности
 
@@ -19,7 +19,7 @@
 
 ## Клиент
 
-**[Клиент AmneziaGeo](https://github.com/bor-project/amneziageo/blob/master/README.ru.md)** для Windows, Linux и Android сам читает с сервера гео-источники, списки маршрутизации, адрес подписки и замер скорости: подробности на его **[сайте документации](https://bor-project.github.io/amneziageo/index.ru.html)**. Любое другое приложение AmneziaWG работает с сервером как с обычным сервером AmneziaWG.
+**[Клиент AmneziaGeo](https://github.com/ytreeeeeeeeeeee/amneziageo/blob/master/README.ru.md)** для Windows, Linux и Android сам читает с сервера гео-источники, списки маршрутизации, адрес подписки и замер скорости: подробности на его **[сайте документации](https://bor-project.github.io/amneziageo/index.ru.html)**. Любое другое приложение AmneziaWG работает с сервером как с обычным сервером AmneziaWG.
 
 ## Разработчикам
 

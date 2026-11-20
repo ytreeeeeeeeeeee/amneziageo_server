@@ -18,7 +18,7 @@ public sealed class UpdateOptions
     /// <summary>
     /// The repository whose releases carry the panel.
     /// </summary>
-    public string Repository { get; set; } = "bor-project/amneziageo_server";
+    public string Repository { get; set; } = "ytreeeeeeeeeeee/amneziageo_server";
 
     /// <summary>
     /// The channel releases are taken from.

@@ -78,7 +78,7 @@ it prints the commands that put them on from the repository of Docker and stops 
 command goes on once they are on. It asks for the directory of `compose.yaml`, `/opt/amneziageo-docker` by default,
 adds `"ip-forward-no-drop": true` to `/etc/docker/daemon.json` where the version of Docker takes it, lifts the drop
 Docker put on forwarding where no ufw holds the chain, and writes `compose.yaml` that runs the image of the newest
-release of the channel from `ghcr.io/bor-project/amneziageo-server` with directories of the host for the database
+release of the channel from `ghcr.io/ytreeeeeeeeeeee/amneziageo-server` with directories of the host for the database
 and the settings, then makes the first administrator. On a host that ufw guards it gives ufw what the panel cannot
 give it from the container: the ports, the clients of the first endpoint through it and their DNS to the server.
 It asks whether the command goes on the host, yes by default. With yes the menu of the release goes to

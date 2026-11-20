@@ -134,7 +134,7 @@ public sealed class MenuUpdatesTests : IDisposable
             string.Empty);
 
         Assert.Equal(0, exit);
-        Assert.Contains("    image: ghcr.io/bor-project/amneziageo-updates:${AMNEZIAGEO_UPDATES_TAG:-latest}\n", told, StringComparison.Ordinal);
+        Assert.Contains("    image: ghcr.io/ytreeeeeeeeeeee/amneziageo-updates:${AMNEZIAGEO_UPDATES_TAG:-latest}\n", told, StringComparison.Ordinal);
         Assert.Contains("    network_mode: host\n", told, StringComparison.Ordinal);
         Assert.Contains($"      - path: {_root.FullName}/etc/updates.env\n        required: false\n", told, StringComparison.Ordinal);
         Assert.Contains($"      - {_root.FullName}/etc:/etc/amneziageo-updates\n", told, StringComparison.Ordinal);
@@ -179,7 +179,7 @@ public sealed class MenuUpdatesTests : IDisposable
                 }
               ],
               "updates": {
-                "image": "ghcr.io/bor-project/amneziageo-updates@sha256:{{new string('c', 64)}}",
+                "image": "ghcr.io/ytreeeeeeeeeeee/amneziageo-updates@sha256:{{new string('c', 64)}}",
                 "packages": [
                   {
                     "name": "amneziageo-updates-1.0.1.0-linux-x64.tar.gz",

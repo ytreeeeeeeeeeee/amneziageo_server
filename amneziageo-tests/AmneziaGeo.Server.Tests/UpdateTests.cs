@@ -184,7 +184,7 @@ public sealed class UpdateTests : IDisposable
         var offer = await feed.NewestAsync(key.ExportSubjectPublicKeyInfoPem(), CancellationToken.None);
 
         Assert.Equal(new Version(1, 0, 1, 0), offer?.Manifest.Version);
-        Assert.Equal("https://api.github.com/repos/bor-project/amneziageo_server/releases/latest", github.Address);
+        Assert.Equal("https://api.github.com/repos/ytreeeeeeeeeeee/amneziageo_server/releases/latest", github.Address);
         Assert.Equal("gzip", github.Packing);
         Assert.Equal(1, github.Asked);
     }

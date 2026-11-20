@@ -45,7 +45,7 @@ root.
 - проверяет панель, сертификат и интерфейс (шаг 9) и печатает адрес панели, логин и временный пароль.
 
 ```bash
-curl -fsSL https://github.com/bor-project/amneziageo_server/releases/latest/download/amneziageo-server \
+curl -fsSL https://github.com/ytreeeeeeeeeeee/amneziageo_server/releases/latest/download/amneziageo-server \
   -o /usr/local/bin/amneziageo-server
 chmod 755 /usr/local/bin/amneziageo-server
 amneziageo-server install
@@ -235,7 +235,7 @@ name: amneziageo-server
 
 services:
   panel:
-    image: ghcr.io/bor-project/amneziageo-server:${AMNEZIAGEO_TAG:-latest}
+    image: ghcr.io/ytreeeeeeeeeeee/amneziageo-server:${AMNEZIAGEO_TAG:-latest}
     network_mode: host
     cap_add:
       - NET_ADMIN

@@ -15,11 +15,14 @@ Every release carries `amneziageo-server`, a script that puts the panel on a bar
 looks after it there. As root:
 
 ```
-curl -fsSL https://github.com/bor-project/amneziageo_server/releases/latest/download/amneziageo-server \
+curl -fsSL https://github.com/ytreeeeeeeeeeee/amneziageo_server/releases/latest/download/amneziageo-server \
   -o /usr/local/bin/amneziageo-server
 chmod 755 /usr/local/bin/amneziageo-server
 amneziageo-server install
 ```
+
+For a beta-only fork, download the `amneziageo-server` asset from the chosen release tag and select
+the prerelease channel during installation. The `latest` download URL resolves to a stable release.
 
 `install` asks first what goes on the host: `1. Panel`, which serves the releases of the client itself, or
 `2. Client updates server`, the server of the releases of the client alone, see
@@ -124,7 +127,7 @@ the address of the releases, the address of the web interface and, the first tim
 
 | | Package | Container |
 |---|---|---|
-| the program | `/opt/amneziageo-updates/releases/<release>`, `current` and `previous` links to two of them | the image `ghcr.io/bor-project/amneziageo-updates`, the compose project in `/opt/amneziageo-updates` on the network of the host |
+| the program | `/opt/amneziageo-updates/releases/<release>`, `current` and `previous` links to two of them | the image `ghcr.io/ytreeeeeeeeeeee/amneziageo-updates`, the compose project in `/opt/amneziageo-updates` on the network of the host |
 | the service | `amneziageo-updates.service` | the container `amneziageo-updates` |
 | the releases of the client | `/var/lib/amneziageo-updates` | the same, mounted |
 | the settings | `/etc/amneziageo-updates/updates.env`: `Updates__Listen__0` and the certificate | the same, mounted |
