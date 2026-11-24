@@ -106,6 +106,7 @@ const complaints: Record<string, TextKey> = {
   "presets-only-without-presets": "error.presetsOnlyWithoutPresets",
   "bad-entry": "error.badEntry",
   "too-many-entries": "error.tooManyEntries",
+  "too-many-preset-entries": "error.tooManyPresetEntries",
   "bad-interface-name": "error.badInterfaceName",
   "bad-ip-families": "error.badIpFamilies",
   "unsupported-ip-family": "error.unsupportedIpFamily",

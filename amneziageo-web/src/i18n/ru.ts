@@ -415,6 +415,7 @@ export const ru: Dictionary = {
   "presets.removeNote": "Клиенты, которые уже получили список, сохранят его",
   "error.badEntry": "Это не ключ гео, не сеть, не адрес и не домен",
   "error.tooManyEntries": "В шаблоне не больше 256 записей",
+  "error.tooManyPresetEntries": "В пресете маршрутизации не больше 1024 записей во всех списках вместе",
   "clients.preshared": "Общий ключ",
   "clients.note": "Заметка",
   "clients.enabled": "Включено",

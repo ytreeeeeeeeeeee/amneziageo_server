@@ -416,6 +416,7 @@ export const en = {
   "presets.removeNote": "Clients that already got the list keep it",
   "error.badEntry": "Not a geo key, a network, an address or a domain",
   "error.tooManyEntries": "A template carries at most 256 entries",
+  "error.tooManyPresetEntries": "A routing preset carries at most 1024 entries across all lists",
   "clients.preshared": "Preshared key",
   "clients.note": "Note",
   "clients.enabled": "Enabled",
