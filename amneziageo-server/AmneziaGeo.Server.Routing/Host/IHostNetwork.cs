@@ -38,9 +38,9 @@ public interface IHostNetwork
     Task UpAsync(string name, int mtu, CancellationToken ct);
 
     /// <summary>
-    /// Puts the way out through an interface into a routing table.
+    /// Ensures both default routes go through the interface, telling whether either changed.
     /// </summary>
-    Task RouteAsync(string name, int table, CancellationToken ct);
+    Task<bool> RouteAsync(string name, int table, CancellationToken ct);
 
     /// <summary>Sets a default route through a device and optional gateway for one IP family, telling whether it changed.</summary>
     Task<bool> DefaultRouteAsync(string name, int table, AddressFamily family, string gateway, CancellationToken ct);

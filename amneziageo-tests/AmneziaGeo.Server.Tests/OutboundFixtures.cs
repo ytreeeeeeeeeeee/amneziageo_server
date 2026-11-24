@@ -1,6 +1,7 @@
 using System.Net.Sockets;
 using AmneziaGeo.Server.Awg.Device;
 using AmneziaGeo.Server.Routing.Host;
+using AmneziaGeo.Server.Routing.Route;
 
 namespace AmneziaGeo.Server.Tests;
 
@@ -59,6 +60,10 @@ public sealed class Ledger : IHostNetwork
     /// </summary>
     public string Refuses { get; set; } = string.Empty;
 
+    public string RefusedFirewallTable { get; set; } = string.Empty;
+
+    public int AppliedRouteTables { get; private set; }
+
     /// <summary>
     /// What the host says when it refuses, empty for its plain refusal.
     /// </summary>
@@ -113,7 +118,13 @@ public sealed class Ledger : IHostNetwork
     /// <summary>
     /// Puts the way out through an interface into a routing table.
     /// </summary>
-    public Task RouteAsync(string name, int table, CancellationToken ct) => Step($"route {name} {table}");
+    public bool RouteChanged { get; set; }
+
+    public async Task<bool> RouteAsync(string name, int table, CancellationToken ct)
+    {
+        await Step($"route {name} {table}");
+        return RouteChanged;
+    }
 
     public async Task<bool> DefaultRouteAsync(string name, int table, AddressFamily family, string gateway, CancellationToken ct)
     {
@@ -167,11 +178,20 @@ public sealed class Ledger : IHostNetwork
     /// <summary>
     /// Puts a firewall ruleset on the host, replacing the one it holds.
     /// </summary>
-    public Task FirewallAsync(string ruleset, CancellationToken ct)
+    public async Task FirewallAsync(string ruleset, CancellationToken ct)
     {
         Ruleset = ruleset;
+        await Step("firewall").ConfigureAwait(false);
+        if (RefusedFirewallTable.Length > 0
+            && ruleset.StartsWith($"table inet {RefusedFirewallTable}\n", StringComparison.Ordinal))
+        {
+            throw new HostNetworkException($"the host refused '{RefusedFirewallTable}'");
+        }
 
-        return Step("firewall");
+        if (ruleset.StartsWith($"table inet {RouteRuleset.TableName}\n", StringComparison.Ordinal))
+        {
+            AppliedRouteTables++;
+        }
     }
 
     /// <summary>

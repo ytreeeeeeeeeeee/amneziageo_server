@@ -111,13 +111,31 @@ public sealed class TemplateRefresher
         var settings = _resolver.Settings ?? await _dns.ReadAsync(ct).ConfigureAwait(false);
         var outbounds = await _outbounds.ListAsync(ct).ConfigureAwait(false);
         var balancers = await _balancers.ListAsync(ct).ConfigureAwait(false);
-        var way = DnsExit.Way(settings, new RouteWays(outbounds, balancers, _live.Alive));
-        using var upstream = new DnsUpstream(settings.Upstreams, Wait, () => way.Mark);
+        var ways = new RouteWays(outbounds, balancers, _live.Alive);
+        var way = DnsExit.Way(settings, ways);
+        long turns = 0;
+        var eligible = 0;
+        string? familyFault = null;
+        using var upstream = new DnsUpstream(settings.Upstreams, Wait, familyWay: family =>
+        {
+            var selected = DnsExit.Way(settings, ways, Interlocked.Increment(ref turns), family);
+            if (selected.Mark is not null)
+            {
+                Interlocked.Exchange(ref eligible, 1);
+            }
+            else
+            {
+                Interlocked.CompareExchange(ref familyFault, selected.Fault?.Message, null);
+            }
+
+            return selected.Mark;
+        });
         var tally = new Tally(upstream);
         var resolver = new TemplateResolver(tally);
         var found = await resolver.ResolveAsync(entries, GeoIndex.Load(sources, _files), standIns, ct).ConfigureAwait(false);
 
-        return (found, tally.Silence(upstream.Fault, way.Fault?.Message));
+        var fault = Volatile.Read(ref eligible) == 0 ? familyFault ?? upstream.Fault : upstream.Fault;
+        return (found, tally.Silence(fault, way.Fault?.Message));
     }
 
     private ClientTemplate Taken(ClientTemplate template, TemplateResolution found) =>

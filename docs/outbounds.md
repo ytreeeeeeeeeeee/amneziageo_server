@@ -298,17 +298,24 @@ the obfuscation away and refuses some changes of it in place, so moving an outbo
 profile would leave the interface half old. An outbound that is turned off is taken off the host: the rule
 goes, the table is cleared, and the interface is removed.
 
-The panel looks at the interfaces of the outbounds that are on a quarter of a second after the kernel tells of
-a change of the interfaces of the host, and every five seconds when it does not hear the kernel; one that was
-brought down behind its back, with `ip link set down` or otherwise, is brought up again with its addresses and
-its route. An interface that is gone altogether is laid again by the same round, with its keys, its addresses, its
-route and, for a `ws` outbound, its carrier; the outbound carries nothing until the round comes. An interface
+The panel checks enabled outbounds a quarter of a second after a kernel notification about an interface, route
+or policy rule, and every five seconds without a notification. If an AWG or WebSocket tunnel interface is
+up, the check restores one default route through the tunnel per IP family. It removes competing defaults and
+keeps more specific routes in the table. A down interface is brought up
+with its addresses and routes. A missing interface is recreated with its keys, addresses, routes and, for a
+`ws` outbound, its carrier. The outbound carries nothing until the check runs. An interface
 the host refuses is tried again once a minute, or at once when the outbounds change. A change of
 the outbounds through the panel and this round take turns, so an outbound that was just turned off is not laid
 again behind the change.
 
-Raising an interface, writing keys to it and changing routing rules need `CAP_NET_ADMIN`. A server that
-runs without it answers with the outbound and the reason on it instead of failing the request. Setting
+Raising an interface, writing keys to it and changing routing rules need `CAP_NET_ADMIN`. Interface
+errors are reported in the outbound's `fault`. If `nftables` refuses the shared outbound firewall or the
+routing rules, the affected outbound mutation or apply request returns `409 host-refused`. A committed
+create, edit, switch or removal includes the outbound ID in `savedId`. A manual apply reports `savedId: null`.
+The panel refreshes the affected lists after a conflict and shows when the database change was saved.
+
+Enabled outbounds stop being eligible for routing while the shared outbound firewall is pending. The
+background check retries the routing rules independently of that firewall and any database changes. Setting
 `Routing:Sudo` to true runs `ip` and `nft` through `sudo -n`.
 
 ## What the panel shows
@@ -317,8 +324,9 @@ The table names the kind, the server, the mark and the table, the last handshake
 A `ws` outbound names the server behind the proxy, and the proxy itself stands in the form.
 A tunnel counts as alive while its handshake is under three minutes old and its interface is up; while the
 interface is down or gone the state says which of the two it is in `fault`, and the panel shows the outbound
-as refused with that text behind it. `isAlive` is that handshake alone, and `carries` is what the
-rules go by: alive and with a probe that gets through. A rule straight into an outbound that carries nothing
-stays off the host with `outbound-down`, exactly as a rule into a balancer none of whose members carries.
-An outbound through the host has no interface of its own, so there is nothing to count the bytes on: `rxBytes` and `txBytes` come back empty rather
+as refused with that text behind it. `isAlive` also requires the shared outbound firewall to be applied.
+`carries` additionally requires a passing probe when one is configured. A rule stays off the host with
+`outbound-down` when its outbound, or every member of its balancer, cannot carry traffic.
+An outbound through the host has no interface of its own, so there is nothing to count the bytes on: `rxBytes` and
+`txBytes` come back empty rather
 than as zeros, and the panel leaves the traffic of such an outbound blank.

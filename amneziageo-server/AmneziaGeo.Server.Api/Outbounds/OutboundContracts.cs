@@ -109,6 +109,9 @@ public sealed record OutboundMoveRequest(bool Up);
 /// </summary>
 public sealed record OutboundSwitchRequest(bool? On);
 
+/// <summary>Reports a host failure and the affected outbound ID when the database change was committed.</summary>
+public sealed record OutboundApplyFailure(string Error, string Message, long? SavedId);
+
 /// <summary>
 /// Creates implementation-specific response fields without changing the common contract.
 /// </summary>

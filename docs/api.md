@@ -43,6 +43,10 @@ specifies `interfaceName`, `ipv4`, `ipv6`, and optionally `gateway4`/`gateway6`.
 See [existing interface outbounds](outbounds.md#through-an-existing-interface) for the JSON contract
 and the interface lifecycle.
 
+An outbound mutation can return `409 host-refused` after committing its database change. A numeric
+`savedId` in the error body identifies that outbound, including an outbound that was removed. The manual
+apply response uses the same error code without a saved ID. See [outbound application](outbounds.md).
+
 | Area | Page |
 |---|---|
 | accounts, roles, tokens | [auth.md](auth.md) |

@@ -1,4 +1,4 @@
-import { Link, useNavigate, useSearchParams } from "react-router-dom"
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom"
 import { complaint } from "@/api/auth"
 import { useBalancers } from "@/api/balancers"
 import type { Balancer, BalancerMember } from "@/api/balancers"
@@ -23,6 +23,8 @@ export function Channels() {
   const t = useText()
   const language = useLanguage()
   const navigate = useNavigate()
+  const { state } = useLocation()
+  const outboundPending = (state as { outboundPending?: boolean } | null)?.outboundPending === true
   const user = useAppSelector((s) => s.auth.user)
   const [params, setParams] = useSearchParams()
   const outbounds = useOutbounds()
@@ -57,6 +59,7 @@ export function Channels() {
 
   return (
     <div className={`mt-4 ${card}`}>
+      {outboundPending && <div role="status" className={alarmBar}>{t("outbounds.savedPending")}</div>}
       {!loaded && failed === null && <div className="px-4 py-6 text-sm text-muted">{t("outbounds.loading")}</div>}
       {failed !== null && (
         <div className={lines.length === 0 ? alarmLine : alarmBar}>{t(complaint(failed))}</div>

@@ -7,6 +7,43 @@ namespace AmneziaGeo.Server.Tests;
 
 public class IpHostNetworkTests
 {
+    [Fact]
+    public async Task TunnelRouteRepairReplacesOnlyTheMissingFamily()
+    {
+        const string held = """[{"table":42601,"dst":"default","dev":"awgbor"}]""";
+        var tools = Routes(held, "[]");
+        var network = new IpHostNetwork(tools);
+
+        Assert.True(await network.RouteAsync("awgbor", 42601, CancellationToken.None));
+        Assert.Equal(
+            ["ip -4 -N -j route show table all", "ip -6 -N -j route show table all",
+                "ip -6 route replace default dev awgbor table 42601"],
+            tools.Calls);
+
+        tools.Calls.Clear();
+        tools.Answers["ip -6 -N -j route show table all"] = new(0, held, "");
+        Assert.False(await network.RouteAsync("awgbor", 42601, CancellationToken.None));
+        Assert.Equal(["ip -4 -N -j route show table all", "ip -6 -N -j route show table all"], tools.Calls);
+    }
+
+    [Theory]
+    [InlineData("""{"table":42601,"dst":"default","dev":"wrong","metric":10},{"table":42601,"dst":"default","dev":"awgbor","metric":1024}""")]
+    [InlineData("""{"table":42601,"dst":"default","from":"2001:db8::/64","dev":"awgbor"}""")]
+    public async Task TunnelRouteRepairClearsConflictingIpv6DefaultsOnly(string defaults)
+    {
+        const string expected = """{"table":42601,"dst":"default","dev":"awgbor"}""";
+        const string moreSpecific = """{"table":42601,"dst":"2001:db8:1::/64","dev":"awgbor"}""";
+        var tools = Routes($"[{expected}]", $"[{defaults},{moreSpecific}]");
+        var network = new IpHostNetwork(tools);
+
+        Assert.True(await network.RouteAsync("awgbor", 42601, CancellationToken.None));
+        Assert.Equal(["ip -6 route flush table 42601 exact default", "ip -6 route replace default dev awgbor table 42601"],
+            tools.Calls.Skip(2));
+
+        tools.Answers["ip -6 -N -j route show table all"] = new(0, $"[{expected},{moreSpecific}]", "");
+        Assert.False(await network.RouteAsync("awgbor", 42601, CancellationToken.None));
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(254)]

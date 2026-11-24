@@ -78,11 +78,13 @@ public class HostChangesTests
     [Theory]
     [InlineData((ushort)16, true)]
     [InlineData((ushort)17, true)]
+    [InlineData((ushort)24, true)]
+    [InlineData((ushort)25, true)]
     [InlineData((ushort)32, true)]
     [InlineData((ushort)33, true)]
     [InlineData((ushort)2, false)]
     [InlineData((ushort)20, false)]
-    public void TheKernelToldOfAChangeOfAnInterfaceOrARuleAlone(ushort type, bool told)
+    public void TheKernelReportsInterfaceRouteAndPolicyRuleChanges(ushort type, bool told)
     {
         var batch = new byte[24];
         BinaryPrimitives.WriteUInt32LittleEndian(batch, 24);

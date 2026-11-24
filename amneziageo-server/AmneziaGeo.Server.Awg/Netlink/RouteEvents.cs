@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 namespace AmneziaGeo.Server.Awg.Netlink;
 
 /// <summary>
-/// Hears the kernel tell of changes of the interfaces and of the routing rules of the host.
+/// Hears the kernel tell of changes to the host's interfaces, routes and routing rules.
 /// </summary>
 public sealed partial class RouteEvents : IDisposable
 {
@@ -14,7 +14,9 @@ public sealed partial class RouteEvents : IDisposable
     private const int NetlinkRoute = 0;
 
     private const uint Links = 1;
+    private const uint RoutesV4 = 1u << 6;
     private const uint RulesV4 = 1u << 7;
+    private const uint RoutesV6 = 1u << 10;
     private const uint RulesV6 = 1u << 18;
 
     private const int Again = 11;
@@ -23,6 +25,8 @@ public sealed partial class RouteEvents : IDisposable
 
     private const ushort NewLink = 16;
     private const ushort DelLink = 17;
+    private const ushort NewRoute = 24;
+    private const ushort DelRoute = 25;
     private const ushort NewRule = 32;
     private const ushort DelRule = 33;
 
@@ -40,7 +44,7 @@ public sealed partial class RouteEvents : IDisposable
             throw new NetlinkException("the routing socket could not be opened", Marshal.GetLastPInvokeError());
         }
 
-        var address = new SocketAddress { Family = AfNetlink, Groups = Links | RulesV4 | RulesV6 };
+        var address = new SocketAddress { Family = AfNetlink, Groups = Links | RoutesV4 | RoutesV6 | RulesV4 | RulesV6 };
         if (BindSocket(_handle, ref address, (uint)Marshal.SizeOf<SocketAddress>()) < 0)
         {
             var error = Marshal.GetLastPInvokeError();
@@ -94,7 +98,7 @@ public sealed partial class RouteEvents : IDisposable
     }
 
     /// <summary>
-    /// Tells whether a batch carries a change of an interface or of a rule, rather than an answer to a knock.
+    /// Tells whether a batch carries a change of an interface, route or rule.
     /// </summary>
     public static bool Told(ReadOnlySpan<byte> batch)
     {
@@ -108,7 +112,7 @@ public sealed partial class RouteEvents : IDisposable
                 return false;
             }
 
-            if (type is NewLink or DelLink or NewRule or DelRule)
+            if (type is NewLink or DelLink or NewRoute or DelRoute or NewRule or DelRule)
             {
                 return true;
             }

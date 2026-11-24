@@ -4,6 +4,7 @@ using AmneziaGeo.Server.Api.Clients;
 using AmneziaGeo.Server.Awg.Client;
 using AmneziaGeo.Server.Routing.Balance;
 using AmneziaGeo.Server.Routing.Dns;
+using AmneziaGeo.Server.Routing.Outbound;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AmneziaGeo.Server.Tests;
@@ -69,6 +70,24 @@ public class TemplateRenewTests
     }
 
     [Fact]
+    public async Task RenewalDoesNotSendIpv4DnsThroughAnIpv6OnlyOutbound()
+    {
+        using var bench = new Bench();
+        using var server = new NameServer(("example.com", "93.184.216.34"));
+        var outbound = await bench.Outbounds.AddAsync(new InterfaceOutboundConfig
+        {
+            Name = "ipv6-exit", Device = "test6", Ipv6 = true,
+        }, CancellationToken.None);
+        Assert.True(outbound.IsOk, outbound.Message);
+        var template = await StaleAsync(bench, TimeSpan.FromDays(2), "domain:example.com");
+
+        var pass = await Refresher(bench, server.Point, outbound.Record!.Name).RenewAsync(template, CancellationToken.None);
+
+        Assert.Same(template, pass.Template);
+        Assert.Equal("the outbound 'ipv6-exit' does not support the name server's IP family", pass.Silence);
+    }
+
+    [Fact]
     public async Task NetworksAreWorkedOutWithoutTheNameServers()
     {
         using var bench = new Bench();
@@ -101,10 +120,10 @@ public class TemplateRenewTests
     private static TemplateRenewer Renewer(Bench bench, IPEndPoint server) =>
         new(bench.Templates, Refresher(bench, server), bench.Clock, NullLogger<TemplateRenewer>.Instance);
 
-    private static TemplateRefresher Refresher(Bench bench, IPEndPoint server)
+    private static TemplateRefresher Refresher(Bench bench, IPEndPoint server, string outbound = "")
     {
         var resolver = new DnsState();
-        resolver.Took(DnsDefaults.Settings with { Upstreams = [$"{server.Address}:{server.Port}"] });
+        resolver.Took(DnsDefaults.Settings with { Upstreams = [$"{server.Address}:{server.Port}"], Outbound = outbound });
 
         return new TemplateRefresher(
             bench.Geo,
