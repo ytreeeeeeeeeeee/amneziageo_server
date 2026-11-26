@@ -24,6 +24,10 @@ public sealed class OutboundHost : IDisposable
     private readonly HostTurn _turn = new();
 
     private volatile bool _sealed;
+    private volatile string? _firewallFault;
+
+    /// <summary>Whether the shared outbound firewall needs another attempt.</summary>
+    public bool FirewallPending => _firewallFault is not null;
 
     /// <summary>
     /// ctor
@@ -146,7 +150,7 @@ public sealed class OutboundHost : IDisposable
                 .ConfigureAwait(false);
             _standing[key] = standing with { Applied = true, Fault = string.Empty };
 
-            return State(outbound);
+            return DriverState(outbound);
         }
         catch (OperationCanceledException)
         {
@@ -286,15 +290,14 @@ public sealed class OutboundHost : IDisposable
     {
         ArgumentNullException.ThrowIfNull(outbounds);
 
-        var states = new List<OutboundState>(outbounds.Count);
         foreach (var outbound in outbounds)
         {
-            states.Add(await ApplyAsync(outbound, ct).ConfigureAwait(false));
+            await ApplyAsync(outbound, ct).ConfigureAwait(false);
         }
 
         await FirewallAsync(outbounds, ct).ConfigureAwait(false);
 
-        return states;
+        return States(outbounds);
     }
 
     /// <summary>
@@ -304,17 +307,34 @@ public sealed class OutboundHost : IDisposable
     {
         ArgumentNullException.ThrowIfNull(outbounds);
 
-        var uplink = await _network.UplinkAsync(ct).ConfigureAwait(false);
-        var retained = _standing.Values.Where(entry => !entry.Applied && entry.Resources is not null)
-            .Select(entry => entry.Resources! with { IsEnabled = true });
-        await _network.FirewallAsync(OutboundRuleset.Text([.. outbounds, .. retained], uplink), ct)
-            .ConfigureAwait(false);
+        try
+        {
+            var uplink = await _network.UplinkAsync(ct).ConfigureAwait(false);
+            var retained = _standing.Values.Where(entry => !entry.Applied && entry.Resources is not null)
+                .Select(entry => entry.Resources! with { IsEnabled = true });
+            await _network.FirewallAsync(OutboundRuleset.Text([.. outbounds, .. retained], uplink), ct)
+                .ConfigureAwait(false);
+            _firewallFault = null;
+        }
+        catch (Exception ex) when (ex is HostNetworkException or SocketException or OperationCanceledException)
+        {
+            _firewallFault = $"the outbound firewall was not applied: {ex.Message}";
+            throw;
+        }
     }
 
     /// <summary>
     /// Returns what the host holds for one outbound.
     /// </summary>
     public OutboundState State(OutboundConfig outbound)
+    {
+        var state = DriverState(outbound);
+        return outbound.IsEnabled && state.Fault.Length == 0 && _firewallFault is { } fault
+            ? state with { IsAlive = false, Fault = fault }
+            : state;
+    }
+
+    private OutboundState DriverState(OutboundConfig outbound)
     {
         ArgumentNullException.ThrowIfNull(outbound);
 

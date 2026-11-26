@@ -1,13 +1,29 @@
+using System.Net;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Reflection;
+using System.Text.Json;
+using AmneziaGeo.Server.Api.Auth;
+using AmneziaGeo.Server.Api.Configs;
+using AmneziaGeo.Server.Api.Dns;
 using AmneziaGeo.Server.Api.Outbounds;
+using AmneziaGeo.Server.Api.Rules;
+using AmneziaGeo.Server.Auth;
 using AmneziaGeo.Server.Awg.Device;
 using AmneziaGeo.Server.Dal;
+using AmneziaGeo.Server.Routing.Access;
 using AmneziaGeo.Server.Routing.Balance;
+using AmneziaGeo.Server.Routing.Dns;
 using AmneziaGeo.Server.Routing.Host;
+using AmneziaGeo.Server.Routing.Names;
 using AmneziaGeo.Server.Routing.Outbound;
 using AmneziaGeo.Server.Routing.Probe;
+using AmneziaGeo.Server.Routing.Route;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AmneziaGeo.Server.Tests;
@@ -156,7 +172,8 @@ public class OutboundLifecycleTests
         var answers = new OutboundAnswers([new LocalOutboundResponses(), new AwgOutboundResponses()]);
         var before = (await bench.Outbounds.ListAsync(CancellationToken.None)).Count;
 
-        var refused = await Invoke("AddAsync", request, bench.Outbounds, host, null, answers, CancellationToken.None);
+        var refused = await Invoke("AddAsync", request, bench.Outbounds, host, null, answers,
+            NullLogger<OutboundHost>.Instance, CancellationToken.None);
 
         Assert.Equal(409, Assert.IsAssignableFrom<IStatusCodeHttpResult>(refused).StatusCode);
         Assert.Equal(before, (await bench.Outbounds.ListAsync(CancellationToken.None)).Count);
@@ -299,6 +316,121 @@ public class OutboundLifecycleTests
 
     private static OutboundHost Host(Ledger ledger, Kernel kernel) =>
         new(ledger, [new LocalOutboundDriver(), new AwgOutboundDriver(ledger, kernel)]);
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FirewallFailureReportsSavedStateAndEachTableRecoversWithoutAnotherDatabaseChange(bool partialRecovery)
+    {
+        using var bench = new Bench();
+        var ct = CancellationToken.None;
+        var original = Assert.Single(await bench.Outbounds.ListAsync(ct));
+        var saved = await bench.Outbounds.ChangeAsync(original.Id, original with { Probe = "" }, ct);
+        var outbound = Assert.IsType<LocalOutboundConfig>(saved.Record);
+        var ledger = new Ledger();
+        var probes = new ProbeLive();
+        var runner = new ProbeRunner(new ProbeLink(), probes, bench.Clock, NullLogger<ProbeRunner>.Instance);
+        using var host = new OutboundHost(ledger, [new LocalOutboundDriver()], probes);
+        using var changes = new HostChanges();
+        changes.Listening();
+        using var plans = new RoutePlans(bench.Clock);
+        var live = new BalanceLive();
+        var sets = new DnsSets(ledger);
+        var state = new DnsState();
+        var book = new StandInBook(bench.Clock);
+        using var dns = new DnsHost(bench.Scopes, plans, sets, state, new AccessNames(), book,
+            new DnsHolders(), new DnsStandIns(), bench.Clock, NullLogger<DnsHost>.Instance);
+        var routes = new RouteApplier(bench.Rules, bench.Outbounds, bench.Balancers, bench.Configs, bench.Geo,
+            bench.Resolver, state, bench.GeoFiles, plans, live, sets, bench.Clients, host, new AccessGate(),
+            new NameGate(), bench.Templates, book, ledger, NullLogger<RouteApplier>.Instance);
+        var version = bench.Services.GetRequiredService<DatabaseVersion>();
+        var endpoint = new EndpointHost(ledger, new Kernel());
+        using var keeper = new EndpointKeeper(ledger, endpoint, null!);
+        var configWatch = new ConfigWatch(keeper, endpoint, dns, version, bench.Clock, NullLogger<ConfigWatch>.Instance);
+
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.Logging.ClearProviders();
+        builder.WebHost.ConfigureKestrel(kestrel => kestrel.Listen(IPAddress.Loopback, 0));
+        builder.Services.AddSingleton<ITokenIssuer>(bench.Issuer);
+        builder.Services.AddSingleton<TimeProvider>(bench.Clock);
+        builder.Services.AddSingleton(bench.Outbounds).AddSingleton(bench.Balancers).AddSingleton(bench.Rules)
+            .AddSingleton(bench.Configs).AddSingleton(host).AddSingleton(routes).AddSingleton(dns).AddSingleton(runner);
+        builder.Services.AddSingleton(new OutboundAnswers([new LocalOutboundResponses()]));
+        builder.Services.ConfigureHttpJsonOptions(options => OutboundJson.Configure(options.SerializerOptions));
+        await using var app = builder.Build();
+        app.UseBearer();
+        app.MapOutbounds();
+        await app.StartAsync(ct);
+        using var http = new HttpClient { BaseAddress = new Uri(Assert.Single(app.Urls)) };
+        var principal = new Principal(1, "operator", AuthScheme.Bearer, 1, new HashSet<string>
+            { Scopes.ReadState, Scopes.ManageRouting });
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer",
+            bench.Issuer.Issue(principal, bench.Clock.Now));
+        using var watch = new ProbeWatch(app.Services.GetRequiredService<IServiceScopeFactory>(), runner, probes,
+            host, live, configWatch, version, changes, bench.Clock, NullLogger<ProbeWatch>.Instance);
+        await watch.LookAsync(ct);
+        Assert.True(host.State(outbound).Carries);
+
+        var originalRevision = version.Read();
+        ledger.Refuses = "firewall";
+        var path = $"/api/outbounds/{outbound.Id}";
+        using var response = partialRecovery
+            ? await http.PutAsJsonAsync(path, new
+            {
+                outbound.Name, outbound.Kind, outbound.IsEnabled, outbound.Probe, ClosePrivate = !outbound.ClosePrivate,
+            }, ct)
+            : await http.PostAsync(path + "/apply", null, ct);
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        var failure = Assert.IsType<OutboundApplyFailure>(await response.Content.ReadFromJsonAsync<OutboundApplyFailure>(ct));
+        Assert.Equal("host-refused", failure.Error);
+        Assert.Equal(partialRecovery ? outbound.Id : (long?)null, failure.SavedId);
+        var revision = version.Read();
+        if (partialRecovery)
+        {
+            var read = await http.GetFromJsonAsync<JsonElement>(path, ct);
+            Assert.Equal(!outbound.ClosePrivate, read.GetProperty("closePrivate").GetBoolean());
+            outbound = Assert.IsType<LocalOutboundConfig>(await bench.Outbounds.FindAsync(outbound.Id, ct));
+        }
+        else
+        {
+            Assert.Equal(originalRevision, revision);
+        }
+
+        Assert.False(host.State(outbound).Carries);
+        Assert.Contains("firewall", host.State(outbound).Fault, StringComparison.Ordinal);
+        Assert.False(plans.Held!.Ways.IsAlive(outbound.Name));
+        Assert.Equal(revision, version.Read());
+
+        await watch.LookAsync(ct);
+        Assert.True(host.FirewallPending);
+        ledger.Refuses = "";
+        await watch.LookAsync(ct);
+        Assert.True(host.FirewallPending);
+
+        var appliedTables = ledger.AppliedRouteTables;
+        ledger.RefusedFirewallTable = partialRecovery ? RouteRuleset.TableName : "";
+        bench.Clock.Pass(ConfigWatch.Retry);
+        await watch.LookAsync(ct);
+
+        Assert.False(host.FirewallPending);
+        Assert.True(host.State(outbound).Carries);
+        if (partialRecovery)
+        {
+            Assert.Equal(appliedTables, ledger.AppliedRouteTables);
+            ledger.RefusedFirewallTable = "";
+            await watch.LookAsync(ct);
+            Assert.Equal(appliedTables, ledger.AppliedRouteTables);
+            bench.Clock.Pass(ConfigWatch.Retry);
+            await watch.LookAsync(ct);
+        }
+
+        Assert.Equal(appliedTables + 1, ledger.AppliedRouteTables);
+        bench.Clock.Pass(ConfigWatch.Retry);
+        await watch.LookAsync(ct);
+        Assert.Equal(appliedTables + 1, ledger.AppliedRouteTables);
+        Assert.True(plans.Held!.Ways.IsAlive(outbound.Name));
+        Assert.Equal(revision, version.Read());
+    }
 
     private static AwgOutboundConfig Tunnel(string name) => AwgOutboundDefaults.Fresh(name) with
     {

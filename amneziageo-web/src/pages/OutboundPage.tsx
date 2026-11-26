@@ -1,6 +1,8 @@
 import { Navigate, useNavigate, useParams } from "react-router-dom"
+import { complaint } from "@/api/auth"
 import {
   draftOf,
+  outboundSaved,
   useAddOutbound,
   useApplyOutbound,
   useChangeOutbound,
@@ -42,7 +44,14 @@ function NewOutbound() {
       source={fresh.data}
       pending={add.isPending}
       error={add.error}
-      onSave={(draft) => void add.mutateAsync(draft).then(() => navigate(back))}
+      onSave={(draft) => add.mutate(draft, {
+        onSuccess: () => navigate(back),
+        onError: (error) => {
+          if (outboundSaved(error)) {
+            navigate(back, { state: { outboundPending: true } })
+          }
+        },
+      })}
       onClose={() => navigate(back)}
     />
   )
@@ -56,6 +65,7 @@ function HeldOutbound({ outboundId }: { outboundId: number }) {
   const change = useChangeOutbound()
   const apply = useApplyOutbound()
   const probe = useProbeOutbound()
+  const applyError = apply.error === null ? null : complaint(apply.error)
   const all = outbounds.data ?? []
   const held = all.find((one) => one.id === outboundId)
 
@@ -74,7 +84,7 @@ function HeldOutbound({ outboundId }: { outboundId: number }) {
       <HeadActions>
         <button
           type="button"
-          onClick={() => void probe.mutateAsync(held.id)}
+          onClick={() => probe.mutate(held.id)}
           disabled={probe.isPending}
           className={`flex h-10 items-center ${secondary}`}
         >
@@ -82,7 +92,7 @@ function HeldOutbound({ outboundId }: { outboundId: number }) {
         </button>
         <button
           type="button"
-          onClick={() => void apply.mutateAsync(held.id)}
+          onClick={() => apply.mutate(held.id)}
           disabled={apply.isPending}
           className={`flex h-10 items-center ${secondary}`}
         >
@@ -90,13 +100,26 @@ function HeldOutbound({ outboundId }: { outboundId: number }) {
         </button>
       </HeadActions>
 
+      {applyError !== null && (
+        <div role="alert" className="mb-3 text-sm text-alarm">
+          {t(applyError === "error.hostRefused" ? "outbounds.applyPending" : applyError)}
+        </div>
+      )}
+
       <OutboundForm
         start={draftOf(held)}
         source={held}
         self={held.name}
         pending={change.isPending}
         error={change.error}
-        onSave={(draft) => void change.mutateAsync({ id: held.id, draft }).then(() => navigate(back))}
+        onSave={(draft) => change.mutate({ id: held.id, draft }, {
+          onSuccess: () => navigate(back),
+          onError: (error) => {
+            if (outboundSaved(error)) {
+              navigate(back, { state: { outboundPending: true } })
+            }
+          },
+        })}
         onClose={() => navigate(back)}
         onRemove={() => navigate(`/routing/channels/${held.id}/delete`)}
       />

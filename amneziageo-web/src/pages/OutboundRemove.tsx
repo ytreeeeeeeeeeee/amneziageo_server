@@ -1,6 +1,6 @@
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom"
 import { complaint } from "@/api/auth"
-import { useOutbounds, useRemoveOutbound } from "@/api/outbounds"
+import { outboundSaved, useOutbounds, useRemoveOutbound } from "@/api/outbounds"
 import { useTail } from "@/components/crumbs"
 import { WayHolders } from "@/components/Holders"
 import { card, danger, secondary } from "@/components/styles"
@@ -24,10 +24,10 @@ export function OutboundRemove() {
   )
 
   if (held === undefined) {
-    return outbounds.data === undefined ? (
+    return outbounds.data === undefined || remove.isPending ? (
       <div className="mt-4 text-sm text-muted">{t("outbounds.loading")}</div>
     ) : (
-      <Navigate to={back} replace />
+      <Navigate to={back} replace state={{ outboundPending: outboundSaved(remove.error) }} />
     )
   }
 
@@ -52,7 +52,14 @@ export function OutboundRemove() {
         </Link>
         <button
           type="button"
-          onClick={() => void remove.mutateAsync(held.id).then(() => navigate(back))}
+          onClick={() => remove.mutate(held.id, {
+            onSuccess: () => navigate(back),
+            onError: (error) => {
+              if (outboundSaved(error)) {
+                navigate(back, { state: { outboundPending: true } })
+              }
+            },
+          })}
           disabled={remove.isPending}
           className={danger}
         >

@@ -18,6 +18,11 @@ public static class PresetRules
     public const int UidLength = 36;
 
     /// <summary>
+    /// The most rules a client reads from one preset in hello (ServerOffer.MaxPresetRules).
+    /// </summary>
+    public const int MaxEntries = 1024;
+
+    /// <summary>
     /// The word a rule that goes through the tunnel starts with.
     /// </summary>
     public const string Proxy = "proxy";
@@ -39,8 +44,18 @@ public static class PresetRules
     {
         ArgumentNullException.ThrowIfNull(preset);
 
-        return CheckName(preset.Name)
-            ?? PresetList.Check(preset.Proxy)
+        var nameFault = CheckName(preset.Name);
+        if (nameFault is not null)
+        {
+            return nameFault;
+        }
+
+        if (preset.Proxy.Count + preset.Direct.Count + preset.Block.Count > MaxEntries)
+        {
+            return new ClientFault("too-many-preset-entries", $"a preset carries at most {MaxEntries} entries in total");
+        }
+
+        return PresetList.Check(preset.Proxy)
             ?? PresetList.Check(preset.Direct)
             ?? TemplateList.Check(preset.Block);
     }

@@ -59,6 +59,36 @@ public class PresetStoreTests
     }
 
     [Fact]
+    public async Task AFullPresetKeepsAllApplicationExceptions()
+    {
+        using var bench = new Bench();
+        var packages = Enumerable.Range(0, 827).Select(index => $"app:pkg=org.example.app{index}").ToArray();
+        var added = await bench.Presets.AddAsync(
+            Fresh("android") with { Proxy = [], Direct = packages, Full = true, IsDefault = true, ReadOnly = true },
+            CancellationToken.None);
+
+        Assert.True(added.IsOk, added.Message);
+        var read = await bench.Presets.FindAsync(added.Record!.Id, CancellationToken.None);
+        Assert.Equal(packages.Select(package => $"direct|{package}"), PresetRules.Rules(read!));
+        Assert.True(read!.Full && read.IsDefault && read.ReadOnly);
+    }
+
+    [Theory]
+    [InlineData(1023, true)]
+    [InlineData(1024, false)]
+    public void APresetFitsTheClientLimitAcrossAllBuckets(int directCount, bool fits)
+    {
+        var preset = Fresh("android") with
+        {
+            Proxy = [],
+            Direct = Enumerable.Range(0, directCount).Select(index => $"app:pkg=org.example.app{index}").ToArray(),
+            Block = ["domain:ads.example.com"],
+        };
+
+        Assert.Equal(fits ? null : "too-many-preset-entries", PresetRules.Check(preset)?.Code);
+    }
+
+    [Fact]
     public async Task TheBlockListTakesNoApplication()
     {
         using var bench = new Bench();

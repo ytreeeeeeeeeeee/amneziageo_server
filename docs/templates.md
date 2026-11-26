@@ -191,8 +191,9 @@ hold is refused with `unknown-preset`.
 | Setting | Holds |
 |---|---|
 | Name | up to 64 characters, one of a kind; the name of the list on the client |
-| Through the VPN, Directly | up to 256 geo keys, networks, addresses, domains and applications each |
+| Through the VPN, Directly | geo keys, networks, addresses, domains and applications |
 | Block | up to 256 geo keys, networks, addresses and domains |
+| Total entries | up to 1024 across Through the VPN, Directly and Block |
 | All UDP through the tunnel | off by default |
 | Everything through the VPN | off by default |
 | On by default | off by default; the application puts the list in use when it adds it and routes by none |

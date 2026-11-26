@@ -1,3 +1,5 @@
+using System.Net.Sockets;
+using AmneziaGeo.Server.Api.Configs;
 using AmneziaGeo.Server.Api.Dns;
 using AmneziaGeo.Server.Dal;
 using AmneziaGeo.Server.Geo;
@@ -14,9 +16,22 @@ namespace AmneziaGeo.Server.Api.Rules;
 /// <summary>
 /// Holds the plan the host was last given.
 /// </summary>
-public sealed class RoutePlans
+public sealed class RoutePlans(TimeProvider? time = null) : IDisposable
 {
+    private readonly TimeProvider _time = time ?? TimeProvider.System;
+    private readonly HostTurn _turn = new();
+    private long _rulesAgain = long.MaxValue;
     private RoutePlan? _held;
+
+    internal bool RulesPending => Volatile.Read(ref _rulesAgain) != long.MaxValue;
+
+    internal bool RulesDue => Volatile.Read(ref _rulesAgain) <= _time.GetUtcNow().UtcTicks;
+
+    internal Task<IDisposable> HoldAsync(CancellationToken ct) => _turn.HoldAsync(ct);
+
+    internal void Refused() => Volatile.Write(ref _rulesAgain, (_time.GetUtcNow() + ConfigWatch.Retry).UtcTicks);
+
+    internal void Applied() => Volatile.Write(ref _rulesAgain, long.MaxValue);
 
     /// <summary>
     /// Returns the plan built last, or null when none was built yet.
@@ -36,6 +51,9 @@ public sealed class RoutePlans
         Volatile.Write(ref _held, plan);
         Kept?.Invoke();
     }
+
+    /// <inheritdoc/>
+    public void Dispose() => _turn.Dispose();
 }
 
 /// <summary>
@@ -166,12 +184,7 @@ public sealed class RouteApplier
     /// <summary>
     /// Puts the rules on the host.
     /// </summary>
-    public async Task<RoutePlan> ApplyAsync(CancellationToken ct)
-    {
-        var plan = await BuildAsync(ct).ConfigureAwait(false);
-
-        return await LayAsync(plan, ct).ConfigureAwait(false);
-    }
+    public Task<RoutePlan> ApplyAsync(CancellationToken ct) => ApplyAsync(false, ct);
 
     /// <summary>
     /// Puts the rules on the host anew when one of them names clients.
@@ -201,20 +214,28 @@ public sealed class RouteApplier
     }
 
     /// <summary>
-    /// Puts the rules on the host, leaving a host that refuses to the next command.
+    /// Puts the rules on the host, scheduling a retry if it refuses.
     /// </summary>
-    public async Task<RoutePlan> SettleAsync(CancellationToken ct)
+    public Task<RoutePlan> SettleAsync(CancellationToken ct) => ApplyAsync(true, ct);
+
+    internal async Task RetryAsync(CancellationToken ct)
     {
-        var plan = await BuildAsync(ct).ConfigureAwait(false);
-        try
+        if (!_plans.RulesDue)
         {
-            return await LayAsync(plan, ct).ConfigureAwait(false);
-        }
-        catch (HostNetworkException)
-        {
+            return;
         }
 
-        return plan;
+        using var hold = await _plans.HoldAsync(ct).ConfigureAwait(false);
+        if (_plans.RulesDue)
+        {
+            await ApplyHeldAsync(true, ct).ConfigureAwait(false);
+        }
+    }
+
+    private async Task<RoutePlan> ApplyAsync(bool settle, CancellationToken ct)
+    {
+        using var hold = await _plans.HoldAsync(ct).ConfigureAwait(false);
+        return await ApplyHeldAsync(settle, ct).ConfigureAwait(false);
     }
 
     // Tells whether the resolver answers some clients with stand-in addresses.
@@ -222,9 +243,37 @@ public sealed class RouteApplier
         resolver.IsEnabled
         && (await _templates.ListAsync(ct).ConfigureAwait(false)).Any(template => template.StandIns);
 
-    private async Task<RoutePlan> LayAsync(RoutePlan plan, CancellationToken ct)
+    private async Task<RoutePlan> ApplyHeldAsync(bool settle, CancellationToken ct)
     {
-        var laid = await RulesAsync(plan, ct).ConfigureAwait(false);
+        var plan = await BuildAsync(ct).ConfigureAwait(false);
+        RoutePlan laid;
+        try
+        {
+            laid = await RulesAsync(plan, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is HostNetworkException or SocketException)
+        {
+            _plans.Refused();
+            _logger.LogWarning(ex, "[FIX] the host refused {Table}; the routing rules will be retried", RouteRuleset.TableName);
+            if (settle)
+            {
+                return plan;
+            }
+
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            _plans.Refused();
+            throw;
+        }
+
+        if (_plans.RulesPending)
+        {
+            _plans.Applied();
+            _logger.LogInformation("[FIX] the routing rules in {Table} were restored", RouteRuleset.TableName);
+        }
+
         await GuardAsync(laid, ct).ConfigureAwait(false);
 
         return laid;

@@ -52,6 +52,20 @@ public class OutboundHostTests
     }
 
     [Fact]
+    public async Task AnUpTunnelRepairsItsRouteWithoutReapplyingTheInterface()
+    {
+        var ledger = new Ledger { RouteChanged = true };
+        ledger.Links.Add("awgbor");
+        var kernel = new Kernel();
+        var driver = new AwgOutboundDriver(ledger, kernel);
+
+        Assert.True(await driver.MendAsync(Tunnel(), CancellationToken.None));
+
+        Assert.Equal(["route awgbor 42601"], ledger.Steps);
+        Assert.Empty(kernel.Updates);
+    }
+
+    [Fact]
     public async Task AnOutboundThatIsTurnedOffIsTakenOffTheHost()
     {
         var ledger = new Ledger();
@@ -123,7 +137,7 @@ public class OutboundHostTests
     }
 
     [Fact]
-    public async Task AnInterfaceThatIsUpOrTurnedOffIsNotMended()
+    public async Task AnUpInterfaceChecksItsRoutesAndADisabledInterfaceIsLeftAlone()
     {
         var up = new Ledger();
         up.Links.Add("awgbor");
@@ -138,8 +152,10 @@ public class OutboundHostTests
         var offMended = await Host(off, new Kernel())
             .MendAsync(Tunnel() with { IsEnabled = false }, CancellationToken.None);
 
-        Assert.False(upMended || offMended);
-        Assert.Empty(up.Steps.Concat(off.Steps));
+        Assert.False(upMended);
+        Assert.Equal(["route awgbor 42601"], up.Steps);
+        Assert.False(offMended);
+        Assert.Empty(off.Steps);
     }
 
     [Fact]

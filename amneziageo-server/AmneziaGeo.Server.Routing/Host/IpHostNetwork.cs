@@ -142,15 +142,31 @@ public sealed class IpHostNetwork : IHostNetwork
         await RunAsync([Ip, "link", "set", "dev", name, "up"], ct).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Puts the way out through an interface into a routing table.
-    /// </summary>
-    public async Task RouteAsync(string name, int table, CancellationToken ct)
+    /// <inheritdoc/>
+    public async Task<bool> RouteAsync(string name, int table, CancellationToken ct)
     {
-        var number = table.ToString();
-        await RunAsync([Ip, "route", "replace", "default", "dev", name, "table", number], ct).ConfigureAwait(false);
-        await RunAsync([Ip, "-6", "route", "replace", "default", "dev", name, "table", number], ct)
-            .ConfigureAwait(false);
+        OutboundTable(table);
+        var changed = false;
+        foreach (var six in new[] { false, true })
+        {
+            var held = (await TableRoutesAsync(table, six, ct).ConfigureAwait(false)).Where(IsDefault).ToArray();
+            if (held.Length == 1 && DefaultOn(held[0], name, ""))
+            {
+                continue;
+            }
+
+            if (held.Length > 0)
+            {
+                await RunAsync([Ip, .. Family(six), "route", "flush", "table", table.ToString(), "exact", "default"], ct)
+                    .ConfigureAwait(false);
+            }
+
+            await RunAsync([Ip, .. Family(six), "route", "replace", "default", "dev", name, "table", table.ToString()], ct)
+                .ConfigureAwait(false);
+            changed = true;
+        }
+
+        return changed;
     }
 
     /// <summary>
@@ -188,11 +204,9 @@ public sealed class IpHostNetwork : IHostNetwork
 
         var six = family == AddressFamily.InterNetworkV6;
         var held = await TableRoutesAsync(table, six, ct).ConfigureAwait(false);
-        if (held.Length == 1 && Field(held[0], "dst") == "default"
-            && (name is not null
-                ? Field(held[0], "dev") == name && SameAddress(Field(held[0], "gateway"), gateway)
-                    && Field(held[0], "type") is "" or "1"
-                : Field(held[0], "type") is "7" or "unreachable"))
+        if (held.Length == 1 && (name is not null
+                ? DefaultOn(held[0], name, gateway)
+                : IsDefault(held[0]) && Field(held[0], "type") is "7" or "unreachable"))
         {
             return false;
         }
@@ -244,6 +258,12 @@ public sealed class IpHostNetwork : IHostNetwork
 
     private static string Field(JsonElement route, string name) =>
         route.TryGetProperty(name, out var value) ? value.ToString() : "";
+
+    private static bool IsDefault(JsonElement route) => Field(route, "dst") == "default";
+
+    private static bool DefaultOn(JsonElement route, string name, string gateway) =>
+        IsDefault(route) && Field(route, "from").Length == 0 && Field(route, "dev") == name
+        && SameAddress(Field(route, "gateway"), gateway) && Field(route, "type") is "" or "1";
 
     private static bool SameAddress(string left, string right) => left == right
         || (IPAddress.TryParse(left, out var one) && IPAddress.TryParse(right, out var other) && one.Equals(other));

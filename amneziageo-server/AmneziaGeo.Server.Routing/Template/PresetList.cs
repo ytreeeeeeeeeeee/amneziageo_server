@@ -92,11 +92,6 @@ public static class PresetList
     {
         ArgumentNullException.ThrowIfNull(entries);
 
-        if (entries.Count > TemplateList.MaxEntries)
-        {
-            return new ClientFault("too-many-entries", $"a preset carries at most {TemplateList.MaxEntries} entries in a list");
-        }
-
         foreach (var entry in entries)
         {
             if (Entry(entry) is null)

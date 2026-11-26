@@ -97,7 +97,7 @@ public sealed class AwgOutboundDriver : IOutboundDriver
 
         if (!IsDown(outbound))
         {
-            return false;
+            return await _network.RouteAsync(outbound.Name, outbound.Table, ct).ConfigureAwait(false);
         }
 
         await _network.AddressAsync(outbound.Name, AwgOutboundDevice.Hosts(awg.Address), ct).ConfigureAwait(false);

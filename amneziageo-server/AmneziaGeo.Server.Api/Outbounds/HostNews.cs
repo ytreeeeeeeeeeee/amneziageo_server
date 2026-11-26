@@ -4,7 +4,7 @@ using AmneziaGeo.Server.Routing.Host;
 namespace AmneziaGeo.Server.Api.Outbounds;
 
 /// <summary>
-/// Hears the kernel tell of changes of the interfaces and of the routing rules of the host and passes them on to the
+/// Hears the kernel tell of changes of the interfaces, routes and policy rules of the host and passes them on to the
 /// round that keeps the outbounds and the endpoints.
 /// </summary>
 public sealed class HostNews : IHostedService, IDisposable
@@ -37,7 +37,7 @@ public sealed class HostNews : IHostedService, IDisposable
         catch (Exception ex) when (ex is NetlinkException or DllNotFoundException)
         {
             _logger.LogWarning(ex,
-                "the panel does not hear the kernel about the interfaces and the rules and looks at them every round");
+                "the panel does not hear the kernel about interfaces, routes and policy rules and looks at them every round");
 
             return Task.CompletedTask;
         }
@@ -82,7 +82,7 @@ public sealed class HostNews : IHostedService, IDisposable
             {
                 if (!_stopping)
                 {
-                    _logger.LogWarning(ex, "the panel stopped hearing the kernel about the interfaces and the rules");
+                    _logger.LogWarning(ex, "the panel stopped hearing the kernel about interfaces, routes and policy rules");
                     _changes.Deaf();
                 }
 

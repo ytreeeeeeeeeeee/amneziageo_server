@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import axios from "axios"
 import { client } from "./client"
 
 import type { Outbound, OutboundDraft, OutboundKind } from "./outboundTypes"
@@ -53,15 +54,28 @@ export function useProbeOutbound() {
 
 export { draftOf, reuseDraft } from "./outboundTypes"
 
+export function outboundSaved(error: unknown): boolean {
+  if (!axios.isAxiosError<{ error?: string; savedId?: number }>(error)) {
+    return false
+  }
+
+  const reply = error.response
+  return reply?.status === 409 && reply.data?.error === "host-refused" && typeof reply.data.savedId === "number"
+}
+
 function useRefreshing<TArgs>(call: (args: TArgs) => Promise<unknown>) {
   const queryClient = useQueryClient()
 
   return useMutation({
     mutationFn: call,
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["outbounds"] })
-      await queryClient.invalidateQueries({ queryKey: ["balancers"] })
-      await queryClient.invalidateQueries({ queryKey: ["rules"] })
+    onSettled: async (_data, error) => {
+      if (error === null || (axios.isAxiosError(error) && error.response?.status === 409)) {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ["outbounds"] }),
+          queryClient.invalidateQueries({ queryKey: ["balancers"] }),
+          queryClient.invalidateQueries({ queryKey: ["rules"] }),
+        ])
+      }
     },
   })
 }

@@ -77,13 +77,15 @@ public sealed class ProbeWatch : BackgroundService
                 moved |= await _runner.RunAsync(outbound, ct).ConfigureAwait(false);
             }
 
+            var routes = services.GetRequiredService<RouteApplier>();
             if (!moved)
             {
+                await routes.RetryAsync(ct).ConfigureAwait(false);
                 return;
             }
 
             _carrying.Keep(_host.Carrying(outbounds));
-            await services.GetRequiredService<RouteApplier>().SettleAsync(ct).ConfigureAwait(false);
+            await routes.SettleAsync(ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is InvalidOperationException or IOException)
         {
@@ -115,7 +117,8 @@ public sealed class ProbeWatch : BackgroundService
         var outbounds = _outbounds;
         _live.Hold(outbounds.Select(one => one.Id));
         var now = _time.GetUtcNow();
-        if (!changed && !fresh && !_resting.Values.Any(again => again <= now) && !(_rulesAgain <= now)
+        if (!changed && !fresh && !_resting.Values.Any(again => again <= now)
+            && !(_rulesAgain <= now) && !(_host.FirewallPending && _rulesAgain is null)
             && !(_retireAgain <= now))
         {
             return (outbounds, false);
@@ -146,7 +149,7 @@ public sealed class ProbeWatch : BackgroundService
         _firewallPending |= moved || settingsChanged;
         if (fresh || !(_rulesAgain > now))
         {
-            await KeepRulesAsync(outbounds, now, ct).ConfigureAwait(false);
+            moved |= await KeepRulesAsync(outbounds, now, ct).ConfigureAwait(false);
         }
 
         moved |= !carrying.ToHashSet(StringComparer.Ordinal).SetEquals(_host.Carrying(outbounds));
@@ -197,8 +200,9 @@ public sealed class ProbeWatch : BackgroundService
     }
 
     // Lays again the rules of the outbounds the host lost.
-    private async Task KeepRulesAsync(IReadOnlyList<OutboundConfig> outbounds, DateTimeOffset now, CancellationToken ct)
+    private async Task<bool> KeepRulesAsync(IReadOnlyList<OutboundConfig> outbounds, DateTimeOffset now, CancellationToken ct)
     {
+        var recoveringFirewall = _host.FirewallPending;
         try
         {
             if (await _host.KeepSealAsync(ct).ConfigureAwait(false))
@@ -215,18 +219,25 @@ public sealed class ProbeWatch : BackgroundService
                 }
             }
 
-            if (_firewallPending)
+            if (_firewallPending || recoveringFirewall)
             {
                 await _host.FirewallAsync(outbounds, ct).ConfigureAwait(false);
                 _firewallPending = false;
             }
 
             _rulesAgain = null;
+            if (recoveringFirewall)
+            {
+                _logger.LogInformation("the outbound firewall was restored after a failed application");
+            }
+
+            return recoveringFirewall;
         }
         catch (Exception ex) when (ex is HostNetworkException or SocketException)
         {
             _rulesAgain = now + ConfigWatch.Retry;
             _logger.LogWarning(ex, "the routing rules or firewall of the outbounds were not applied again");
+            return false;
         }
     }
 

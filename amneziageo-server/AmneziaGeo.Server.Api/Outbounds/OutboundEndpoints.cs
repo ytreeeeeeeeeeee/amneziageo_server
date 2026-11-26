@@ -1,3 +1,4 @@
+using System.Net.Sockets;
 using AmneziaGeo.Server.Api.Auth;
 using AmneziaGeo.Server.Api.Dns;
 using AmneziaGeo.Server.Api.Rules;
@@ -87,6 +88,7 @@ public static class OutboundEndpoints
         OutboundHost host,
         RouteApplier routes,
         OutboundAnswers answers,
+        ILogger<OutboundHost> logger,
         CancellationToken ct)
     {
         using var hold = await host.HoldAsync(ct).ConfigureAwait(false);
@@ -103,7 +105,10 @@ public static class OutboundEndpoints
         }
 
         var state = await host.ApplyAsync(result.Record!, ct).ConfigureAwait(false);
-        await FirewallAsync(store, host, routes, ct).ConfigureAwait(false);
+        if (await FirewallAsync(store, host, routes, logger, ct, result.Record!.Id).ConfigureAwait(false) is { } failure)
+        {
+            return failure;
+        }
 
         return Results.Created(
             $"/api/outbounds/{result.Record!.Id}",
@@ -200,13 +205,13 @@ public static class OutboundEndpoints
                 result.Record.Name, held.Kind, result.Record.Kind);
         }
 
-        await FirewallAsync(store, host, routes, ct).ConfigureAwait(false);
+        var failure = await FirewallAsync(store, host, routes, logger, ct, id).ConfigureAwait(false);
         if (held is not null)
         {
             await resolver.FollowAsync(held.Name, result.Record!.Name, ct).ConfigureAwait(false);
         }
 
-        return Results.Ok(answers.Outbound(result.Record!, state, true));
+        return failure ?? Results.Ok(answers.Outbound(result.Record!, state, true));
     }
 
     private static async Task<IResult> SwitchAsync(
@@ -216,6 +221,7 @@ public static class OutboundEndpoints
         OutboundHost host,
         RouteApplier routes,
         OutboundAnswers answers,
+        ILogger<OutboundHost> logger,
         CancellationToken ct)
     {
         if (request.On is not { } on)
@@ -231,9 +237,8 @@ public static class OutboundEndpoints
         }
 
         var state = await host.ApplyAsync(result.Record!, ct).ConfigureAwait(false);
-        await FirewallAsync(store, host, routes, ct).ConfigureAwait(false);
-
-        return Results.Ok(answers.Outbound(result.Record!, state, true));
+        return await FirewallAsync(store, host, routes, logger, ct, id).ConfigureAwait(false)
+            ?? Results.Ok(answers.Outbound(result.Record!, state, true));
     }
 
     private static async Task<IResult> MoveAsync(
@@ -257,6 +262,7 @@ public static class OutboundEndpoints
         OutboundHost host,
         RouteApplier routes,
         DnsHost resolver,
+        ILogger<OutboundHost> logger,
         CancellationToken ct)
     {
         using var hold = await host.HoldAsync(ct).ConfigureAwait(false);
@@ -266,14 +272,22 @@ public static class OutboundEndpoints
             return Explain(result);
         }
 
-        await host.WithdrawAsync(result.Record!, ct).ConfigureAwait(false);
-        await FirewallAsync(store, host, routes, ct).ConfigureAwait(false);
+        try
+        {
+            await host.WithdrawAsync(result.Record!, ct).ConfigureAwait(false);
+        }
+        catch (HostNetworkException ex)
+        {
+            logger.LogWarning(ex, "[FIX] outbound {Id} was removed from the database; host cleanup will be retried", id);
+            await routes.SettleAsync(ct).ConfigureAwait(false);
+            return HostRefused(ex.Message, id);
+        }
 
-        return Results.NoContent();
+        return await FirewallAsync(store, host, routes, logger, ct, id).ConfigureAwait(false) ?? Results.NoContent();
     }
 
     private static async Task<IResult> ApplyAsync(long id, OutboundStore store, OutboundHost host, RouteApplier routes,
-        OutboundAnswers answers, CancellationToken ct)
+        OutboundAnswers answers, ILogger<OutboundHost> logger, CancellationToken ct)
     {
         using var hold = await host.HoldAsync(ct).ConfigureAwait(false);
         var found = await store.FindAsync(id, ct).ConfigureAwait(false);
@@ -284,44 +298,64 @@ public static class OutboundEndpoints
         }
 
         var state = await host.ApplyAsync(found, ct).ConfigureAwait(false);
-        await FirewallAsync(store, host, routes, ct).ConfigureAwait(false);
-
-        return Results.Ok(answers.Outbound(found, state, true));
+        return await FirewallAsync(store, host, routes, logger, ct).ConfigureAwait(false)
+            ?? Results.Ok(answers.Outbound(found, state, true));
     }
 
     private static async Task<IResult> SyncAsync(OutboundStore store, OutboundHost host, RouteApplier routes,
-        OutboundAnswers answers, CancellationToken ct)
+        OutboundAnswers answers, ILogger<OutboundHost> logger, CancellationToken ct)
     {
         using var hold = await host.HoldAsync(ct).ConfigureAwait(false);
         var found = await store.ListAsync(ct).ConfigureAwait(false);
+        IReadOnlyList<OutboundState> states;
         try
         {
-            var states = await host.SyncAsync(found, ct).ConfigureAwait(false);
-            await routes.SettleAsync(ct).ConfigureAwait(false);
-
-            return Results.Ok(found
-                .Select((outbound, at) => answers.Outbound(outbound, states[at], true))
-                .ToArray());
+            states = await host.SyncAsync(found, ct).ConfigureAwait(false);
         }
-        catch (HostNetworkException ex)
+        catch (Exception ex) when (ex is HostNetworkException or SocketException)
         {
-            return Refuse(StatusCodes.Status409Conflict, "host-refused", ex.Message);
+            logger.LogWarning(ex, "the host refused the outbound sync");
+            await routes.SettleAsync(ct).ConfigureAwait(false);
+            return HostRefused(ex.Message, null);
         }
+
+        return await RouteFailureAsync(routes, ct, null).ConfigureAwait(false)
+            ?? Results.Ok(found.Select((outbound, at) => answers.Outbound(outbound, states[at], true)).ToArray());
     }
 
-    private static async Task FirewallAsync(OutboundStore store, OutboundHost host, RouteApplier routes,
-        CancellationToken ct)
+    private static async Task<IResult?> FirewallAsync(OutboundStore store, OutboundHost host, RouteApplier routes,
+        ILogger<OutboundHost> logger, CancellationToken ct, long? savedId = null)
     {
+        IResult? failure = null;
         try
         {
             await host.FirewallAsync(await store.ListAsync(ct).ConfigureAwait(false), ct).ConfigureAwait(false);
         }
-        catch (HostNetworkException)
+        catch (Exception ex) when (ex is HostNetworkException or SocketException)
         {
+            logger.LogWarning(ex, "[FIX] the outbound firewall will be retried (saved outbound ID: {SavedId})", savedId);
+            failure = HostRefused(ex.Message, savedId);
         }
 
-        await routes.SettleAsync(ct).ConfigureAwait(false);
+        var routeFailure = await RouteFailureAsync(routes, ct, savedId).ConfigureAwait(false);
+        return failure ?? routeFailure;
     }
+
+    private static async Task<IResult?> RouteFailureAsync(RouteApplier routes, CancellationToken ct, long? savedId)
+    {
+        try
+        {
+            await routes.ApplyAsync(ct).ConfigureAwait(false);
+            return null;
+        }
+        catch (Exception ex) when (ex is HostNetworkException or SocketException)
+        {
+            return HostRefused(ex.Message, savedId);
+        }
+    }
+
+    private static IResult HostRefused(string message, long? savedId) =>
+        Results.Json(new OutboundApplyFailure("host-refused", message, savedId), statusCode: StatusCodes.Status409Conflict);
 
     private static bool Secrets(HttpContext context) => context.Caller()?.Holds(Scopes.ManageRouting) == true;
 
